@@ -1,0 +1,59 @@
+{
+  "name": "black-edition-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agency Operating System - Streamline Your Creative Agency Operations",
+  "author": "Black Edition Agency",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:web": "npm run dev --workspace=@black-edition/web",
+    "dev:api": "npm run dev --workspace=@black-edition/api",
+    "build": "npm run build --workspaces --if-present",
+    "build:web": "npm run build --workspace=@black-edition/web",
+    "build:api": "npm run build --workspace=@black-edition/api",
+    "start": "npm run start --workspaces --if-present",
+    "start:web": "npm run start --workspace=@black-edition/web",
+    "start:api": "npm run start --workspace=@black-edition/api",
+    "lint": "npm run lint --workspaces --if-present",
+    "lint:fix": "npm run lint:fix --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "type-check": "npm run type-check --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:unit": "npm run test:unit --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspace=@black-edition/web",
+    "db:generate": "npm run db:generate --workspace=@black-edition/database",
+    "db:migrate": "npm run db:migrate --workspace=@black-edition/database",
+    "db:migrate:prod": "npm run db:migrate:prod --workspace=@black-edition/database",
+    "db:studio": "npm run db:studio --workspace=@black-edition/database",
+    "db:seed": "npm run db:seed --workspace=@black-edition/database",
+    "db:reset": "npm run db:reset --workspace=@black-edition/database",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "docker:restart": "docker-compose restart",
+    "docker:build": "docker-compose build",
+    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules",
+    "prepare": "husky install"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.2.5",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
