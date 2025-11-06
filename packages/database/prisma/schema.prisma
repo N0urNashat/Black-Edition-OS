@@ -75,6 +75,18 @@ model Organization {
   files         File[]
   meetings      Meeting[]
 
+  // Payment Settings
+  payMobEnabled       Boolean @default(false)
+  payMobApiKey        String?
+  payMobIntegrationId String?
+  payMobHmacSecret    String?
+
+  instapayEnabled     Boolean @default(false)
+  instapayLink        String?
+
+  bankTransferEnabled Boolean @default(false)
+  bankDetails         String?
+
   @@index([slug])
   @@map("organizations")
 }

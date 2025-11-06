@@ -1,9 +1,10 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, CreditCard, Wallet, Building2, FileText } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { ArrowLeft, CreditCard, Wallet, Building2, FileText, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,8 +30,46 @@ const statusColors: Record<string, string> = {
 
 export default function ClientInvoiceDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const invoiceId = params.id as string;
   const orgSlug = params.orgSlug as string;
+
+  // PayMob checkout mutation
+  const payMobMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const response = await fetch('http://localhost:4000/api/payments/paymob/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': 'org_black_edition',
+        },
+        body: JSON.stringify({ invoiceId }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to initiate payment');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      const paymentToken = data.data.paymentToken;
+      const iframeId = process.env.NEXT_PUBLIC_PAYMOB_IFRAME_ID || '862767';
+
+      // Redirect to PayMob IFrame
+      window.location.href = `https://accept.paymob.com/api/acceptance/iframes/${iframeId}?payment_token=${paymentToken}`;
+    },
+    onError: (error: any) => {
+      toast.error('Payment Error', {
+        description: error.message || 'Failed to initiate payment. Please try again.',
+      });
+    },
+  });
+
+  const handlePayMobPayment = () => {
+    payMobMutation.mutate(invoiceId);
+  };
 
   // Fetch invoice
   const { data: invoice, isLoading: loadingInvoice } = useQuery({
@@ -251,9 +290,23 @@ export default function ClientInvoiceDetailPage() {
                 <CardContent className="space-y-3">
                   {/* PayMob */}
                   {settings.payMobEnabled && (
-                    <Button variant="outline" className="w-full justify-start">
-                      <CreditCard className="h-4 w-4 mr-2 text-[#93DA97]" />
-                      Pay with PayMob
+                    <Button
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={handlePayMobPayment}
+                      disabled={payMobMutation.isPending}
+                    >
+                      {payMobMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="h-4 w-4 mr-2 text-[#93DA97]" />
+                          Pay with PayMob
+                        </>
+                      )}
                     </Button>
                   )}
 
