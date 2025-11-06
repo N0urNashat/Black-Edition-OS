@@ -662,6 +662,7 @@ enum PaymentMethod {
   BANK_TRANSFER
   PAYMOB
   STRIPE
+  INSTAPAY
   CASH
   CHECK
 }

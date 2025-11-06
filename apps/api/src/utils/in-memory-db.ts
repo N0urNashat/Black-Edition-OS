@@ -143,6 +143,45 @@ interface TimeEntry {
   updatedAt: Date;
 }
 
+interface Invoice {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  projectId: string | null;
+  invoiceNumber: string;
+  status: string; // DRAFT, SENT, VIEWED, PARTIALLY_PAID, PAID, OVERDUE, CANCELLED, REFUNDED
+  issueDate: Date;
+  dueDate: Date;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  discount: number;
+  total: number;
+  paidAmount: number;
+  currency: string;
+  notes: string | null;
+  terms: string | null;
+  sentAt: Date | null;
+  viewedAt: Date | null;
+  paidAt: Date | null;
+  recurring: boolean;
+  recurringInterval: string | null; // monthly, quarterly, yearly
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface InvoiceLineItem {
+  id: string;
+  invoiceId: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  taxable: boolean;
+  position: number;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
@@ -152,6 +191,9 @@ class InMemoryDataStore {
   private milestones: Map<string, Milestone> = new Map();
   private tasks: Map<string, Task> = new Map();
   private timeEntries: Map<string, TimeEntry> = new Map();
+  private invoices: Map<string, Invoice> = new Map();
+  private invoiceLineItems: Map<string, InvoiceLineItem> = new Map();
+  private organizationSettings: Map<string, any> = new Map();
 
   constructor() {
     this.seedData();
@@ -831,6 +873,149 @@ class InMemoryDataStore {
 
     this.timeEntries.delete(id);
     return timeEntry;
+  }
+
+  // ==================== PAYMENT SETTINGS METHODS ====================
+
+  async getPaymentSettings(organizationId: string) {
+    const settings = this.organizationSettings.get(`payment_${organizationId}`);
+    return settings || {
+      payMobEnabled: false,
+      payMobApiKey: '',
+      payMobIntegrationId: '',
+      payMobHmacSecret: '',
+      instapayEnabled: false,
+      instapayLink: '',
+      bankTransferEnabled: false,
+      bankDetails: '',
+    };
+  }
+
+  async updatePaymentSettings(organizationId: string, data: any) {
+    const key = `payment_${organizationId}`;
+    const currentSettings = await this.getPaymentSettings(organizationId);
+    const updatedSettings = {
+      ...currentSettings,
+      ...data,
+    };
+    this.organizationSettings.set(key, updatedSettings);
+    return updatedSettings;
+  }
+
+  // ==================== INVOICE METHODS ====================
+
+  async createInvoice(data: Partial<Invoice> & { lineItems?: Partial<InvoiceLineItem>[] }) {
+    const id = this.generateId();
+
+    // Generate invoice number if not provided
+    const invoiceCount = this.invoices.size + 1;
+    const invoiceNumber = data.invoiceNumber || `INV-${String(invoiceCount).padStart(5, '0')}`;
+
+    const invoice: Invoice = {
+      id,
+      organizationId: data.organizationId!,
+      customerId: data.customerId!,
+      projectId: data.projectId || null,
+      invoiceNumber,
+      status: data.status || 'DRAFT',
+      issueDate: data.issueDate || new Date(),
+      dueDate: data.dueDate!,
+      subtotal: data.subtotal || 0,
+      taxRate: data.taxRate || 0,
+      taxAmount: data.taxAmount || 0,
+      discount: data.discount || 0,
+      total: data.total || 0,
+      paidAmount: data.paidAmount || 0,
+      currency: data.currency || 'EGP',
+      notes: data.notes || null,
+      terms: data.terms || null,
+      sentAt: data.sentAt || null,
+      viewedAt: data.viewedAt || null,
+      paidAt: data.paidAt || null,
+      recurring: data.recurring || false,
+      recurringInterval: data.recurringInterval || null,
+      createdById: data.createdById!,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.invoices.set(id, invoice);
+
+    // Create line items
+    if (data.lineItems && data.lineItems.length > 0) {
+      data.lineItems.forEach((item, index) => {
+        const lineItemId = this.generateId();
+        const lineItem: InvoiceLineItem = {
+          id: lineItemId,
+          invoiceId: id,
+          description: item.description!,
+          quantity: item.quantity || 1,
+          rate: item.rate || 0,
+          amount: item.amount || 0,
+          taxable: item.taxable !== undefined ? item.taxable : true,
+          position: item.position !== undefined ? item.position : index,
+        };
+        this.invoiceLineItems.set(lineItemId, lineItem);
+      });
+    }
+
+    return this.findInvoiceById(id, invoice.organizationId);
+  }
+
+  async findManyInvoices(filter: any = {}) {
+    let filtered = Array.from(this.invoices.values());
+
+    // Filter by organizationId
+    if (filter.organizationId) {
+      filtered = filtered.filter((i) => i.organizationId === filter.organizationId);
+    }
+
+    // Filter by customerId
+    if (filter.customerId) {
+      filtered = filtered.filter((i) => i.customerId === filter.customerId);
+    }
+
+    // Filter by status
+    if (filter.status) {
+      filtered = filtered.filter((i) => i.status === filter.status);
+    }
+
+    // Search by invoice number
+    if (filter.search) {
+      filtered = filtered.filter((i) =>
+        i.invoiceNumber.toLowerCase().includes(filter.search.toLowerCase())
+      );
+    }
+
+    // Sort by issue date descending (newest first)
+    filtered.sort((a, b) => new Date(b.issueDate).getTime() - new Date(a.issueDate).getTime());
+
+    return filtered.map((invoice) => ({
+      ...invoice,
+      customer: this.customers.get(invoice.customerId),
+      project: invoice.projectId ? this.projects.get(invoice.projectId) : null,
+      createdBy: this.users.get(invoice.createdById),
+    }));
+  }
+
+  async findInvoiceById(id: string, organizationId: string) {
+    const invoice = this.invoices.get(id);
+    if (!invoice || invoice.organizationId !== organizationId) {
+      return null;
+    }
+
+    // Get line items for this invoice
+    const lineItems = Array.from(this.invoiceLineItems.values())
+      .filter((item) => item.invoiceId === id)
+      .sort((a, b) => a.position - b.position);
+
+    return {
+      ...invoice,
+      customer: this.customers.get(invoice.customerId),
+      project: invoice.projectId ? this.projects.get(invoice.projectId) : null,
+      createdBy: this.users.get(invoice.createdById),
+      lineItems,
+    };
   }
 
   async createActivity(data: Partial<Activity>) {

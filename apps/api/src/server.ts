@@ -12,6 +12,8 @@ import projectsRoutes from './routes/projects.routes';
 import milestonesRoutes from './routes/milestones.routes';
 import tasksRoutes from './routes/tasks.routes';
 import timeTrackingRoutes from './routes/time-tracking.routes';
+import settingsRoutes from './routes/settings.routes';
+import invoicesRoutes from './routes/invoices.routes';
 
 const app: Application = express();
 
@@ -53,6 +55,8 @@ app.use('/api/projects', projectsRoutes);
 app.use('/api', milestonesRoutes);
 app.use('/api', tasksRoutes);
 app.use('/api', timeTrackingRoutes);
+app.use('/api', settingsRoutes);
+app.use('/api', invoicesRoutes);
 
 // API root
 app.get('/api', (req, res) => {
@@ -66,6 +70,8 @@ app.get('/api', (req, res) => {
       milestones: '/api/projects/:projectId/milestones',
       tasks: '/api/tasks',
       timeTracking: '/api/projects/:projectId/time-entries',
+      invoices: '/api/invoices',
+      settings: '/api/settings/payment',
       health: '/health',
     },
   });
