@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 
 /**
  * GET /api/workflows
@@ -19,7 +19,9 @@ export async function getWorkflows(
       filter.isActive = isActive === 'true';
     }
 
-    const workflows = await db.findManyWorkflows(filter);
+    const workflows = await prisma.workflow.findMany({
+      where: filter,
+    });
 
     res.json({
       status: 'success',
@@ -43,7 +45,12 @@ export async function getWorkflowById(
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const workflow = await db.findWorkflowById(id, organizationId);
+    const workflow = await prisma.workflow.findFirst({
+      where: {
+        id,
+        organizationId,
+      },
+    });
 
     if (!workflow) {
       return res.status(404).json({
@@ -91,24 +98,28 @@ export async function createWorkflow(
     }
 
     // Create the workflow
-    const workflow = await db.createWorkflow({
-      organizationId,
-      name: data.name,
-      description: data.description,
-      trigger: data.trigger,
-      actions: data.actions || [],
-      isActive: data.isActive !== undefined ? data.isActive : true,
-      createdById: userId,
+    const workflow = await prisma.workflow.create({
+      data: {
+        organizationId,
+        name: data.name,
+        description: data.description,
+        trigger: data.trigger,
+        actions: data.actions || [],
+        isActive: data.isActive !== undefined ? data.isActive : true,
+        createdById: userId,
+      },
     });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'workflow',
-      entityId: workflow.id,
-      description: `Created workflow: ${workflow.name}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'workflow',
+        entityId: workflow.id,
+        description: `Created workflow: ${workflow.name}`,
+      },
     });
 
     res.status(201).json({
@@ -135,7 +146,12 @@ export async function updateWorkflow(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
     const userId = req.headers['x-user-id'] as string || 'user_1';
 
-    const workflow = await db.updateWorkflow(id, organizationId, data);
+    const workflow = await prisma.workflow.update({
+      where: {
+        id,
+      },
+      data,
+    });
 
     if (!workflow) {
       return res.status(404).json({
@@ -145,13 +161,15 @@ export async function updateWorkflow(
     }
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'UPDATED',
-      entityType: 'workflow',
-      entityId: workflow.id,
-      description: `Updated workflow: ${workflow.name}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'UPDATED',
+        entityType: 'workflow',
+        entityId: workflow.id,
+        description: `Updated workflow: ${workflow.name}`,
+      },
     });
 
     res.json({

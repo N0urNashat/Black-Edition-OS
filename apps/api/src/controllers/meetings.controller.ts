@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -21,7 +21,13 @@ export async function getMeetings(
     if (customerId) filter.customerId = customerId;
     if (status) filter.status = status;
 
-    const meetings = await db.findManyMeetings(filter);
+    const meetings = await prisma.meeting.findMany({
+      where: filter,
+      include: {
+        customer: true,
+        project: true,
+      },
+    });
 
     res.json({
       status: 'success',
@@ -71,16 +77,24 @@ export async function requestMeeting(
     if (data.endTime) meetingData.endTime = new Date(data.endTime);
 
     // Create meeting
-    const meeting = await db.createMeeting(meetingData);
+    const meeting = await prisma.meeting.create({
+      data: meetingData,
+      include: {
+        customer: true,
+        project: true,
+      },
+    });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'meeting',
-      entityId: meeting.id,
-      description: `Requested meeting: ${meeting.title}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'meeting',
+        entityId: meeting.id,
+        description: `Requested meeting: ${meeting.title}`,
+      },
     });
 
     logger.info(`Meeting requested: ${meeting.id} by user ${userId}`);
@@ -110,7 +124,12 @@ export async function createProjectMeeting(
     const userId = req.headers['x-user-id'] as string || 'user_1';
 
     // Verify project exists
-    const project = await db.findProjectById(projectId, organizationId);
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+      },
+    });
     if (!project) {
       throw new AppError(404, 'Project not found');
     }
@@ -138,16 +157,24 @@ export async function createProjectMeeting(
     if (data.endTime) meetingData.endTime = new Date(data.endTime);
 
     // Create meeting
-    const meeting = await db.createMeeting(meetingData);
+    const meeting = await prisma.meeting.create({
+      data: meetingData,
+      include: {
+        customer: true,
+        project: true,
+      },
+    });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'meeting',
-      entityId: meeting.id,
-      description: `Created meeting: ${meeting.title}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'meeting',
+        entityId: meeting.id,
+        description: `Created meeting: ${meeting.title}`,
+      },
     });
 
     logger.info(`Meeting created: ${meeting.id} by user ${userId}`);

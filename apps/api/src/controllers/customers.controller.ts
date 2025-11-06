@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -25,33 +25,50 @@ export async function getCustomers(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     // Build filter
-    const filter: any = { organizationId };
-    if (assignedToId) filter.assignedToId = assignedToId;
+    const where: any = { organizationId };
+    if (assignedToId) where.assignedToId = assignedToId;
     if (search) {
-      filter.OR = [
-        { name: { contains: search } },
-        { company: { contains: search } },
-        { email: { contains: search } },
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { company: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    // Get customers
-    const allCustomers = await db.findManyCustomers(filter);
-    const total = allCustomers.length;
+    // Get total count
+    const total = await prisma.customer.count({ where });
 
-    // Sort
-    const sorted = allCustomers.sort((a, b) => {
-      if (sortBy === 'name') return sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-      const aDate = new Date(a.createdAt).getTime();
-      const bDate = new Date(b.createdAt).getTime();
-      return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
-    });
-
-    // Paginate
+    // Pagination
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const start = (pageNum - 1) * limitNum;
-    const customers = sorted.slice(start, start + limitNum);
+
+    // Get customers with relations
+    const customers = await prisma.customer.findMany({
+      where,
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+      orderBy: {
+        [sortBy]: sortOrder,
+      },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+    });
 
     res.json({
       status: 'success',
@@ -81,7 +98,30 @@ export async function getCustomerById(
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const customer = await db.findCustomerById(id, organizationId);
+    const customer = await prisma.customer.findFirst({
+      where: {
+        id,
+        organizationId,
+      },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+    });
 
     if (!customer) {
       throw new AppError(404, 'Customer not found');

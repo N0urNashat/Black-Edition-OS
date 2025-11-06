@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 
 /**
  * POST /api/ai/generate-proposal
@@ -23,7 +23,9 @@ export async function generateProposal(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     // Fetch the lead data
-    const lead = await db.findLeadById(leadId, organizationId);
+    const lead = await prisma.lead.findFirst({
+      where: { id: leadId, organizationId },
+    });
 
     if (!lead) {
       return res.status(404).json({
@@ -110,13 +112,15 @@ Best regards,
 Black Edition Agency Team`;
 
     // Log activity
-    await db.createActivity({
-      organizationId,
-      userId: req.headers['x-user-id'] as string || 'user_1',
-      action: 'CREATED',
-      entityType: 'lead',
-      entityId: leadId,
-      description: `AI-generated proposal for lead: ${lead.name}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId: req.headers['x-user-id'] as string || 'user_1',
+        action: 'CREATED',
+        entityType: 'lead',
+        entityId: leadId,
+        description: `AI-generated proposal for lead: ${lead.name}`,
+      },
     });
 
     res.json({
@@ -144,18 +148,69 @@ export async function generateReportInsights(
   try {
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    // Fetch aggregated stats
-    const leadStats = await db.getLeadStats(organizationId);
-    const projectStats = await db.getProjectStats(organizationId);
+    // Fetch lead stats
+    const [totalLeads, leadsByStatus] = await Promise.all([
+      prisma.lead.count({ where: { organizationId } }),
+      prisma.lead.groupBy({
+        by: ['status'],
+        where: { organizationId },
+        _count: true,
+      }),
+    ]);
 
-    // Get invoice stats (calculate from invoices)
-    const invoices = await db.findManyInvoices({ organizationId });
-    const totalRevenue = invoices
-      .filter((inv: any) => inv.status === 'PAID')
-      .reduce((sum: number, inv: any) => sum + inv.paidAmount, 0);
-    const outstandingRevenue = invoices
-      .filter((inv: any) => inv.status !== 'PAID' && inv.status !== 'CANCELLED')
-      .reduce((sum: number, inv: any) => sum + (inv.total - inv.paidAmount), 0);
+    const leadStatusCounts: Record<string, number> = {};
+    leadsByStatus.forEach((item) => {
+      leadStatusCounts[item.status] = item._count;
+    });
+
+    const leadStats = {
+      total: totalLeads,
+      new: leadStatusCounts['NEW'] || 0,
+      qualified: leadStatusCounts['QUALIFIED'] || 0,
+      contacted: leadStatusCounts['CONTACTED'] || 0,
+      converted: leadStatusCounts['WON'] || 0,
+    };
+
+    // Fetch project stats
+    const [totalProjects, projectsByStatus] = await Promise.all([
+      prisma.project.count({ where: { organizationId } }),
+      prisma.project.groupBy({
+        by: ['status'],
+        where: { organizationId },
+        _count: true,
+      }),
+    ]);
+
+    const projectStatusCounts: Record<string, number> = {};
+    projectsByStatus.forEach((item) => {
+      projectStatusCounts[item.status] = item._count;
+    });
+
+    const projectStats = {
+      total: totalProjects,
+      active: projectStatusCounts['ACTIVE'] || 0,
+      completed: projectStatusCounts['COMPLETED'] || 0,
+      onHold: projectStatusCounts['ON_HOLD'] || 0,
+    };
+
+    // Get invoice stats
+    const [invoiceCount, paidRevenue, outstandingRevenue] = await Promise.all([
+      prisma.invoice.count({ where: { organizationId } }),
+      prisma.invoice.aggregate({
+        where: { organizationId, status: 'PAID' },
+        _sum: { paidAmount: true },
+      }),
+      prisma.invoice.aggregate({
+        where: {
+          organizationId,
+          status: { notIn: ['PAID', 'CANCELLED'] },
+        },
+        _sum: { total: true, paidAmount: true },
+      }),
+    ]);
+
+    const totalRevenue = paidRevenue._sum.paidAmount || 0;
+    const outstanding = (outstandingRevenue._sum.total || 0) - (outstandingRevenue._sum.paidAmount || 0);
 
     // Construct the prompt for Claude API
     const prompt = `Analyze these business metrics and provide key insights:
@@ -175,8 +230,8 @@ Project Statistics:
 
 Financial Statistics:
 - Total Revenue: $${totalRevenue}
-- Outstanding Revenue: $${outstandingRevenue}
-- Total Invoices: ${invoices.length}
+- Outstanding Revenue: $${outstanding}
+- Total Invoices: ${invoiceCount}
 
 What are the key insights, trends, and recommendations?`;
 
@@ -204,17 +259,17 @@ ${projectStats.active > 0
 
 ### Financial Health
 ${totalRevenue > 0
-  ? `Total revenue of $${totalRevenue} is ${outstandingRevenue > 0 ? `healthy, but you have $${outstandingRevenue} in outstanding invoices.` : "strong with all invoices paid."}`
+  ? `Total revenue of $${totalRevenue} is ${outstanding > 0 ? `healthy, but you have $${outstanding} in outstanding invoices.` : "strong with all invoices paid."}`
   : "Focus on closing deals and invoicing completed work."}
 
-${outstandingRevenue > totalRevenue * 0.3
+${outstanding > totalRevenue * 0.3
   ? "\n⚠️ **Action Required**: Outstanding invoices exceed 30% of total revenue. Follow up on overdue payments."
   : ""}
 
 ### Recommendations
 1. ${leadStats.new > leadStats.contacted ? "Prioritize contacting new leads within 24 hours" : "Continue your strong lead follow-up process"}
 2. ${projectStats.onHold > 0 ? `Review ${projectStats.onHold} on-hold projects for reactivation opportunities` : "Maintain project momentum"}
-3. ${outstandingRevenue > 0 ? "Implement automated payment reminders for outstanding invoices" : "Maintain excellent payment collection practices"}
+3. ${outstanding > 0 ? "Implement automated payment reminders for outstanding invoices" : "Maintain excellent payment collection practices"}
 
 **Overall Score**: ${leadStats.converted > 3 && projectStats.active > 0 ? "Strong" : leadStats.converted > 0 ? "Growing" : "Building"} - Keep monitoring these metrics weekly.`;
 
@@ -227,8 +282,8 @@ ${outstandingRevenue > totalRevenue * 0.3
           projects: projectStats,
           revenue: {
             total: totalRevenue,
-            outstanding: outstandingRevenue,
-            invoiceCount: invoices.length,
+            outstanding: outstanding,
+            invoiceCount: invoiceCount,
           },
         },
         generatedAt: new Date().toISOString(),
@@ -273,44 +328,68 @@ export async function aiSearch(
 
     // Search leads
     if (queryLower.includes('lead') || queryLower.includes('qualified') || queryLower.includes('new')) {
-      const allLeads = await db.findManyLeads({ organizationId });
+      const where: any = { organizationId };
 
       if (queryLower.includes('qualified')) {
-        results.leads = allLeads.filter((l: any) => l.status === 'QUALIFIED');
+        where.status = 'QUALIFIED';
       } else if (queryLower.includes('new')) {
-        results.leads = allLeads.filter((l: any) => l.status === 'NEW');
-      } else {
-        results.leads = allLeads;
+        where.status = 'NEW';
       }
+
+      results.leads = await prisma.lead.findMany({
+        where,
+        include: {
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
     }
 
     // Search customers
     if (queryLower.includes('customer') || queryLower.includes('client')) {
-      results.customers = await db.findManyCustomers({ organizationId });
+      results.customers = await prisma.customer.findMany({
+        where: { organizationId },
+        include: {
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
     }
 
     // Search projects
     if (queryLower.includes('project') || queryLower.includes('active')) {
-      const allProjects = await db.findManyProjects({ organizationId });
+      const where: any = { organizationId };
 
       if (queryLower.includes('active')) {
-        results.projects = allProjects.filter((p: any) => p.status === 'ACTIVE');
-      } else {
-        results.projects = allProjects;
+        where.status = 'ACTIVE';
       }
+
+      results.projects = await prisma.project.findMany({
+        where,
+        include: {
+          customer: { select: { id: true, name: true, email: true, company: true } },
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
     }
 
     // Search invoices
     if (queryLower.includes('invoice') || queryLower.includes('unpaid') || queryLower.includes('overdue')) {
-      const allInvoices = await db.findManyInvoices({ organizationId });
+      const where: any = { organizationId };
 
       if (queryLower.includes('unpaid') || queryLower.includes('overdue')) {
-        results.invoices = allInvoices.filter((i: any) =>
-          i.status !== 'PAID' && i.status !== 'CANCELLED'
-        );
-      } else {
-        results.invoices = allInvoices;
+        where.status = { notIn: ['PAID', 'CANCELLED'] };
       }
+
+      results.invoices = await prisma.invoice.findMany({
+        where,
+        include: {
+          customer: { select: { id: true, name: true, email: true, company: true } },
+          project: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
     }
 
     res.json({

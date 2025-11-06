@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -17,12 +17,25 @@ export async function getInvoices(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     // Build filter
-    const filter: any = { organizationId };
-    if (customerId) filter.customerId = customerId;
-    if (status) filter.status = status;
-    if (search) filter.search = search;
+    const where: any = { organizationId };
+    if (customerId) where.customerId = customerId;
+    if (status) where.status = status;
+    if (search) {
+      where.OR = [
+        { invoiceNumber: { contains: search, mode: 'insensitive' } },
+        { customer: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
 
-    const invoices = await db.findManyInvoices(filter);
+    const invoices = await prisma.invoice.findMany({
+      where,
+      include: {
+        customer: { select: { id: true, name: true, email: true, company: true } },
+        project: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+      orderBy: { issueDate: 'desc' },
+    });
 
     res.json({
       status: 'success',
@@ -46,7 +59,16 @@ export async function getInvoiceById(
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const invoice = await db.findInvoiceById(id, organizationId);
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, organizationId },
+      include: {
+        customer: { select: { id: true, name: true, email: true, company: true } },
+        project: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+        lineItems: { orderBy: { position: 'asc' } },
+      },
+    });
+
     if (!invoice) {
       throw new AppError(404, 'Invoice not found');
     }
@@ -86,24 +108,81 @@ export async function createInvoice(
     }
 
     // Parse dates
-    if (data.dueDate) data.dueDate = new Date(data.dueDate);
-    if (data.issueDate) data.issueDate = new Date(data.issueDate);
+    const dueDate = new Date(data.dueDate);
+    const issueDate = data.issueDate ? new Date(data.issueDate) : new Date();
 
-    // Create invoice
-    const invoice = await db.createInvoice({
-      ...data,
-      organizationId,
-      createdById: userId,
+    // Generate invoice number
+    const invoiceCount = await prisma.invoice.count({
+      where: { organizationId },
     });
+    const invoiceNumber = data.invoiceNumber || `INV-${String(invoiceCount + 1).padStart(5, '0')}`;
 
-    // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'invoice',
-      entityId: invoice!.id,
-      description: `Created invoice ${invoice!.invoiceNumber}`,
+    // Use transaction to create invoice and line items atomically
+    const invoice = await prisma.$transaction(async (tx) => {
+      // Create invoice
+      const createdInvoice = await tx.invoice.create({
+        data: {
+          organizationId,
+          customerId: data.customerId,
+          projectId: data.projectId || null,
+          invoiceNumber,
+          status: data.status || 'DRAFT',
+          issueDate,
+          dueDate,
+          subtotal: data.subtotal,
+          taxRate: data.taxRate || 0,
+          taxAmount: data.taxAmount || 0,
+          discount: data.discount || 0,
+          total: data.total,
+          paidAmount: 0,
+          currency: data.currency || 'EGP',
+          notes: data.notes || null,
+          terms: data.terms || null,
+          recurring: data.recurring || false,
+          recurringInterval: data.recurringInterval || null,
+          createdById: userId,
+        },
+      });
+
+      // Create line items
+      const lineItemsData = data.lineItems.map((item: any, index: number) => ({
+        invoiceId: createdInvoice.id,
+        description: item.description,
+        quantity: item.quantity,
+        rate: item.rate,
+        amount: item.amount,
+        taxable: item.taxable !== false,
+        position: index,
+      }));
+
+      await tx.invoiceLineItem.createMany({
+        data: lineItemsData,
+      });
+
+      // Fetch the complete invoice with relations
+      const completeInvoice = await tx.invoice.findUnique({
+        where: { id: createdInvoice.id },
+        include: {
+          customer: { select: { id: true, name: true, email: true, company: true } },
+          project: { select: { id: true, name: true } },
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+          lineItems: { orderBy: { position: 'asc' } },
+        },
+      });
+
+      // Create activity log
+      await tx.activity.create({
+        data: {
+          organizationId,
+          userId,
+          action: 'CREATED',
+          entityType: 'invoice',
+          entityId: createdInvoice.id,
+          description: `Created invoice ${invoiceNumber}`,
+        },
+      });
+
+      return completeInvoice;
     });
 
     logger.info(`Invoice created: ${invoice!.id} by user ${userId}`);

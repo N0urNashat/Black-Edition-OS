@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { CreateLeadInput, UpdateLeadInput, GetLeadsQuery } from '../validators/leads.validator';
 import { calculateLeadScore } from '../utils/lead-scoring';
 import { AppError } from '../middleware/error-handler';
@@ -30,38 +30,42 @@ export async function getLeads(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     // Build filter
-    const filter: any = { organizationId };
-    if (status) filter.status = status;
-    if (assignedToId) filter.assignedToId = assignedToId;
+    const where: any = { organizationId };
+    if (status) where.status = status;
+    if (assignedToId) where.assignedToId = assignedToId;
     if (minScore !== undefined || maxScore !== undefined) {
-      filter.score = {};
-      if (minScore !== undefined) filter.score.gte = minScore;
-      if (maxScore !== undefined) filter.score.lte = maxScore;
+      where.score = {};
+      if (minScore !== undefined) where.score.gte = minScore;
+      if (maxScore !== undefined) where.score.lte = maxScore;
     }
     if (search) {
-      filter.OR = [
-        { name: { contains: search } },
-        { company: { contains: search } },
-        { email: { contains: search } },
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { company: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    // Get leads
-    const allLeads = await db.findManyLeads(filter);
-    const total = allLeads.length;
+    // Build order by
+    const orderBy: any = {};
+    if (sortBy === 'score') orderBy.score = sortOrder;
+    else if (sortBy === 'name') orderBy.name = sortOrder;
+    else orderBy.createdAt = sortOrder;
 
-    // Sort
-    const sorted = allLeads.sort((a, b) => {
-      if (sortBy === 'score') return sortOrder === 'asc' ? a.score - b.score : b.score - a.score;
-      if (sortBy === 'name') return sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-      const aDate = new Date(a.createdAt).getTime();
-      const bDate = new Date(b.createdAt).getTime();
-      return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
+    // Get total count
+    const total = await prisma.lead.count({ where });
+
+    // Get leads with pagination
+    const leads = await prisma.lead.findMany({
+      where,
+      include: {
+        createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+        assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+      orderBy,
+      skip: (page - 1) * limit,
+      take: limit,
     });
-
-    // Paginate
-    const start = (page - 1) * limit;
-    const leads = sorted.slice(start, start + limit);
 
     res.json({
       status: 'success',
@@ -91,7 +95,13 @@ export async function getLeadById(
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const lead = await db.findLeadById(id, organizationId);
+    const lead = await prisma.lead.findFirst({
+      where: { id, organizationId },
+      include: {
+        createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+        assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+    });
 
     if (!lead) {
       throw new AppError(404, 'Lead not found');
@@ -124,21 +134,29 @@ export async function createLead(
     const score = calculateLeadScore(data);
 
     // Create lead
-    const lead = await db.createLead({
-      ...data,
-      organizationId,
-      createdById: userId,
-      score,
+    const lead = await prisma.lead.create({
+      data: {
+        ...data,
+        organizationId,
+        createdById: userId,
+        score,
+      },
+      include: {
+        createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+        assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+      },
     });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'lead',
-      entityId: lead.id,
-      description: `Created new lead: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'lead',
+        entityId: lead.id,
+        description: `Created new lead: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
+      },
     });
 
     logger.info(`Lead created: ${lead.id} by user ${userId}`);
@@ -168,7 +186,9 @@ export async function updateLead(
     const userId = req.headers['x-user-id'] as string || 'user_2';
 
     // Check if lead exists
-    const existingLead = await db.findLeadById(id, organizationId);
+    const existingLead = await prisma.lead.findFirst({
+      where: { id, organizationId },
+    });
 
     if (!existingLead) {
       throw new AppError(404, 'Lead not found');
@@ -179,33 +199,44 @@ export async function updateLead(
     const score = calculateLeadScore(updatedData);
 
     // Update lead
-    const lead = await db.updateLead(id, {
-      ...data,
-      score,
+    const lead = await prisma.lead.update({
+      where: { id },
+      data: {
+        ...data,
+        score,
+      },
+      include: {
+        createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+        assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+      },
     });
 
     // Create activity log
     const changes = Object.keys(data);
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'UPDATED',
-      entityType: 'lead',
-      entityId: id,
-      description: `Updated lead: ${changes.join(', ')}`,
-      metadata: { changes: data },
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'UPDATED',
+        entityType: 'lead',
+        entityId: id,
+        description: `Updated lead: ${changes.join(', ')}`,
+        metadata: { changes: data },
+      },
     });
 
     // Log status change separately if status changed
     if (data.status && data.status !== existingLead.status) {
-      await db.createActivity({
-        organizationId,
-        userId,
-        action: 'STATUS_CHANGED',
-        entityType: 'lead',
-        entityId: id,
-        description: `Lead status changed from ${existingLead.status} to ${data.status}`,
-        metadata: { from: existingLead.status, to: data.status },
+      await prisma.activity.create({
+        data: {
+          organizationId,
+          userId,
+          action: 'STATUS_CHANGED',
+          entityType: 'lead',
+          entityId: id,
+          description: `Lead status changed from ${existingLead.status} to ${data.status}`,
+          metadata: { from: existingLead.status, to: data.status },
+        },
       });
     }
 
@@ -235,23 +266,29 @@ export async function deleteLead(
     const userId = req.headers['x-user-id'] as string || 'user_2';
 
     // Check if lead exists
-    const lead = await db.findLeadById(id, organizationId);
+    const lead = await prisma.lead.findFirst({
+      where: { id, organizationId },
+    });
 
     if (!lead) {
       throw new AppError(404, 'Lead not found');
     }
 
     // Delete lead
-    await db.deleteLead(id);
+    await prisma.lead.delete({
+      where: { id },
+    });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'DELETED',
-      entityType: 'lead',
-      entityId: id,
-      description: `Deleted lead: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'DELETED',
+        entityType: 'lead',
+        entityId: id,
+        description: `Deleted lead: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
+      },
     });
 
     logger.info(`Lead deleted: ${id} by user ${userId}`);
@@ -277,7 +314,52 @@ export async function getLeadStats(
   try {
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const stats = await db.getLeadStats(organizationId);
+    // Get total leads
+    const totalLeads = await prisma.lead.count({
+      where: { organizationId },
+    });
+
+    // Get leads by status
+    const leadsByStatus = await prisma.lead.groupBy({
+      by: ['status'],
+      where: { organizationId },
+      _count: true,
+    });
+
+    // Calculate status counts
+    const statusCounts: Record<string, number> = {};
+    leadsByStatus.forEach((item) => {
+      statusCounts[item.status] = item._count;
+    });
+
+    // Get average score
+    const scoreAggregate = await prisma.lead.aggregate({
+      where: { organizationId },
+      _avg: { score: true },
+    });
+
+    // Get leads created this month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const thisMonthCount = await prisma.lead.count({
+      where: {
+        organizationId,
+        createdAt: { gte: startOfMonth },
+      },
+    });
+
+    const stats = {
+      total: totalLeads,
+      new: statusCounts['NEW'] || 0,
+      qualified: statusCounts['QUALIFIED'] || 0,
+      contacted: statusCounts['CONTACTED'] || 0,
+      converted: statusCounts['WON'] || 0,
+      thisMonth: thisMonthCount,
+      averageScore: Math.round(scoreAggregate._avg.score || 0),
+      byStatus: statusCounts,
+    };
 
     res.json({
       status: 'success',
@@ -303,7 +385,9 @@ export async function convertLeadToCustomer(
     const userId = req.headers['x-user-id'] as string || 'user_2';
 
     // Check if lead exists
-    const lead = await db.findLeadById(id, organizationId);
+    const lead = await prisma.lead.findFirst({
+      where: { id, organizationId },
+    });
 
     if (!lead) {
       throw new AppError(404, 'Lead not found');
@@ -314,56 +398,75 @@ export async function convertLeadToCustomer(
       throw new AppError(400, 'Lead has already been converted to customer');
     }
 
-    // Create customer from lead data
-    const customer = await db.createCustomer({
-      organizationId,
-      name: lead.name,
-      email: lead.email,
-      phone: lead.phone,
-      company: lead.company,
-      website: lead.website,
-      notes: lead.notes,
-      createdById: userId,
-      assignedToId: lead.assignedToId,
-      leadId: id,
+    // Use transaction to create customer and update lead
+    const result = await prisma.$transaction(async (tx) => {
+      // Create customer from lead data
+      const customer = await tx.customer.create({
+        data: {
+          organizationId,
+          name: lead.name,
+          email: lead.email,
+          phone: lead.phone,
+          company: lead.company,
+          website: lead.website,
+          notes: lead.notes,
+          createdById: userId,
+          assignedToId: lead.assignedToId,
+          leadId: id,
+        },
+        include: {
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
+
+      // Update lead status to WON and link to customer
+      const updatedLead = await tx.lead.update({
+        where: { id },
+        data: {
+          status: 'WON',
+          convertedAt: new Date(),
+          customerId: customer.id,
+        },
+        include: {
+          createdBy: { select: { id: true, name: true, email: true, avatar: true } },
+          assignedTo: { select: { id: true, name: true, email: true, avatar: true } },
+        },
+      });
+
+      // Create activity log for lead
+      await tx.activity.create({
+        data: {
+          organizationId,
+          userId,
+          action: 'CONVERTED',
+          entityType: 'lead',
+          entityId: id,
+          description: `Converted lead to customer: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
+        },
+      });
+
+      // Create activity log for customer
+      await tx.activity.create({
+        data: {
+          organizationId,
+          userId,
+          action: 'CREATED',
+          entityType: 'customer',
+          entityId: customer.id,
+          description: `Customer created from lead: ${customer.name}${customer.company ? ` from ${customer.company}` : ''}`,
+        },
+      });
+
+      return { lead: updatedLead, customer };
     });
 
-    // Update lead status to WON and link to customer
-    const updatedLead = await db.updateLead(id, {
-      status: 'WON',
-      convertedAt: new Date(),
-      customerId: customer.id,
-    });
-
-    // Create activity log for lead
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CONVERTED',
-      entityType: 'lead',
-      entityId: id,
-      description: `Converted lead to customer: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
-    });
-
-    // Create activity log for customer
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'customer',
-      entityId: customer.id,
-      description: `Customer created from lead: ${customer.name}${customer.company ? ` from ${customer.company}` : ''}`,
-    });
-
-    logger.info(`Lead converted to customer: ${id} -> ${customer.id} by user ${userId}`);
+    logger.info(`Lead converted to customer: ${id} -> ${result.customer.id} by user ${userId}`);
 
     res.json({
       status: 'success',
       message: 'Lead converted to customer successfully',
-      data: {
-        lead: updatedLead,
-        customer,
-      },
+      data: result,
     });
   } catch (error) {
     next(error);

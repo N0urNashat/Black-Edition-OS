@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -18,7 +18,12 @@ export async function getProjectTasks(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     // Verify project exists and belongs to organization
-    const project = await db.findProjectById(projectId, organizationId);
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+      },
+    });
     if (!project) {
       throw new AppError(404, 'Project not found');
     }
@@ -28,7 +33,14 @@ export async function getProjectTasks(
     if (status) filter.status = status;
 
     // Get tasks
-    const tasks = await db.findManyTasks(filter);
+    const tasks = await prisma.task.findMany({
+      where: filter,
+      include: {
+        project: true,
+        assignedTo: true,
+        createdBy: true,
+      },
+    });
 
     res.json({
       status: 'success',
@@ -55,7 +67,12 @@ export async function createTask(
     const userId = req.headers['x-user-id'] as string || 'user_1';
 
     // Verify project exists and belongs to organization
-    const project = await db.findProjectById(projectId, organizationId);
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+      },
+    });
     if (!project) {
       throw new AppError(404, 'Project not found');
     }
@@ -67,23 +84,37 @@ export async function createTask(
 
     // Parse dates if provided
     const taskData: any = {
-      ...data,
+      title: data.title,
+      description: data.description,
+      status: data.status,
+      priority: data.priority,
       projectId,
+      assignedToId: data.assignedToId,
+      createdById: userId,
     };
     if (data.dueDate) taskData.dueDate = new Date(data.dueDate);
     if (data.startDate) taskData.startDate = new Date(data.startDate);
 
     // Create task
-    const task = await db.createTask(taskData);
+    const task = await prisma.task.create({
+      data: taskData,
+      include: {
+        project: true,
+        assignedTo: true,
+        createdBy: true,
+      },
+    });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'task',
-      entityId: task.id,
-      description: `Created task: ${task.title}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'task',
+        entityId: task.id,
+        description: `Created task: ${task.title}`,
+      },
     });
 
     logger.info(`Task created: ${task.id} by user ${userId}`);
@@ -109,7 +140,14 @@ export async function getTaskById(
   try {
     const { id } = req.params;
 
-    const task = await db.findTaskById(id);
+    const task = await prisma.task.findFirst({
+      where: { id },
+      include: {
+        project: true,
+        assignedTo: true,
+        createdBy: true,
+      },
+    });
     if (!task) {
       throw new AppError(404, 'Task not found');
     }
@@ -144,19 +182,26 @@ export async function updateTask(
     if (data.startDate) updateData.startDate = new Date(data.startDate);
 
     // Update task
-    const task = await db.updateTask(id, updateData);
-    if (!task) {
-      throw new AppError(404, 'Task not found');
-    }
+    const task = await prisma.task.update({
+      where: { id },
+      data: updateData,
+      include: {
+        project: true,
+        assignedTo: true,
+        createdBy: true,
+      },
+    });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'UPDATED',
-      entityType: 'task',
-      entityId: task.id,
-      description: `Updated task: ${task.title}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'UPDATED',
+        entityType: 'task',
+        entityId: task.id,
+        description: `Updated task: ${task.title}`,
+      },
     });
 
     logger.info(`Task updated: ${task.id} by user ${userId}`);

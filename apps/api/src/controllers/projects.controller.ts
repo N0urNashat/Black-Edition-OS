@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -25,34 +25,39 @@ export async function getProjects(
 
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    // Build filter
-    const filter: any = { organizationId };
-    if (customerId) filter.customerId = customerId;
-    if (status) filter.status = status;
+    // Build where clause
+    const where: any = { organizationId };
+    if (customerId) where.customerId = customerId;
+    if (status) where.status = status;
     if (search) {
-      filter.OR = [
-        { name: { contains: search } },
-        { description: { contains: search } },
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
       ];
     }
 
-    // Get projects
-    const allProjects = await db.findManyProjects(filter);
-    const total = allProjects.length;
-
-    // Sort
-    const sorted = allProjects.sort((a, b) => {
-      if (sortBy === 'name') return sortOrder === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
-      const aDate = new Date(a.createdAt).getTime();
-      const bDate = new Date(b.createdAt).getTime();
-      return sortOrder === 'asc' ? aDate - bDate : bDate - aDate;
-    });
-
-    // Paginate
+    // Calculate pagination
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const start = (pageNum - 1) * limitNum;
-    const projects = sorted.slice(start, start + limitNum);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get projects with relations
+    const [projects, total] = await Promise.all([
+      prisma.project.findMany({
+        where,
+        include: {
+          customer: true,
+          createdBy: true,
+          assignedTo: true,
+        },
+        skip,
+        take: limitNum,
+        orderBy: sortBy === 'name'
+          ? { name: sortOrder as 'asc' | 'desc' }
+          : { createdAt: sortOrder as 'asc' | 'desc' },
+      }),
+      prisma.project.count({ where }),
+    ]);
 
     res.json({
       status: 'success',
@@ -82,7 +87,17 @@ export async function getProjectById(
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const project = await db.findProjectById(id, organizationId);
+    const project = await prisma.project.findFirst({
+      where: {
+        id,
+        organizationId,
+      },
+      include: {
+        customer: true,
+        createdBy: true,
+        assignedTo: true,
+      },
+    });
 
     if (!project) {
       throw new AppError(404, 'Project not found');
@@ -120,20 +135,29 @@ export async function createProject(
     }
 
     // Create project
-    const project = await db.createProject({
-      ...data,
-      organizationId,
-      createdById: userId,
+    const project = await prisma.project.create({
+      data: {
+        ...data,
+        organizationId,
+        createdById: userId,
+      },
+      include: {
+        customer: true,
+        createdBy: true,
+        assignedTo: true,
+      },
     });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'project',
-      entityId: project.id,
-      description: `Created new project: ${project.name}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'project',
+        entityId: project.id,
+        description: `Created new project: ${project.name}`,
+      },
     });
 
     logger.info(`Project created: ${project.id} by user ${userId}`);

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 
 /**
  * GET /api/reports
@@ -17,7 +17,9 @@ export async function getReports(
     const filter: any = { organizationId };
     if (type) filter.type = type;
 
-    const reports = await db.findManyReports(filter);
+    const reports = await prisma.report.findMany({
+      where: filter,
+    });
 
     res.json({
       status: 'success',
@@ -41,7 +43,12 @@ export async function getReportById(
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const report = await db.findReportById(id, organizationId);
+    const report = await prisma.report.findFirst({
+      where: {
+        id,
+        organizationId,
+      },
+    });
 
     if (!report) {
       return res.status(404).json({
@@ -82,25 +89,29 @@ export async function createReport(
     }
 
     // Create the report
-    const report = await db.createReport({
-      organizationId,
-      title: data.title,
-      description: data.description,
-      type: data.type || 'CUSTOM',
-      dateRange: data.dateRange,
-      filters: data.filters,
-      data: data.data,
-      generatedById: userId,
+    const report = await prisma.report.create({
+      data: {
+        organizationId,
+        title: data.title,
+        description: data.description,
+        type: data.type || 'CUSTOM',
+        dateRange: data.dateRange,
+        filters: data.filters,
+        data: data.data,
+        generatedById: userId,
+      },
     });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'report',
-      entityId: report.id,
-      description: `Created report: ${report.title}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'report',
+        entityId: report.id,
+        description: `Created report: ${report.title}`,
+      },
     });
 
     res.status(201).json({

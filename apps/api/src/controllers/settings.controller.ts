@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -15,11 +15,28 @@ export async function getPaymentSettings(
   try {
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    const settings = await db.getPaymentSettings(organizationId);
+    // Get organization with settings
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+
+    // Extract payment settings from organization settings
+    const settings = organization?.settings as any;
+    const paymentSettings = settings?.paymentSettings || {
+      payMobEnabled: false,
+      payMobApiKey: '',
+      payMobIntegrationId: '',
+      payMobHmacSecret: '',
+      instapayEnabled: false,
+      instapayLink: '',
+      bankTransferEnabled: false,
+      bankDetails: '',
+    };
 
     res.json({
       status: 'success',
-      data: settings,
+      data: paymentSettings,
     });
   } catch (error) {
     next(error);
@@ -40,23 +57,49 @@ export async function updatePaymentSettings(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
     const userId = req.headers['x-user-id'] as string || 'user_1';
 
-    const settings = await db.updatePaymentSettings(organizationId, data);
+    // Get current settings
+    const organization = await prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { settings: true },
+    });
+
+    const currentSettings = (organization?.settings as any) || {};
+    const currentPaymentSettings = currentSettings.paymentSettings || {};
+
+    // Merge new payment settings with existing ones
+    const updatedPaymentSettings = {
+      ...currentPaymentSettings,
+      ...data,
+    };
+
+    // Update organization settings
+    await prisma.organization.update({
+      where: { id: organizationId },
+      data: {
+        settings: {
+          ...currentSettings,
+          paymentSettings: updatedPaymentSettings,
+        },
+      },
+    });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'UPDATED',
-      entityType: 'payment_settings',
-      entityId: organizationId,
-      description: 'Updated payment settings',
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'UPDATED',
+        entityType: 'payment_settings',
+        entityId: organizationId,
+        description: 'Updated payment settings',
+      },
     });
 
     logger.info(`Payment settings updated for org ${organizationId} by user ${userId}`);
 
     res.json({
       status: 'success',
-      data: settings,
+      data: updatedPaymentSettings,
     });
   } catch (error) {
     next(error);

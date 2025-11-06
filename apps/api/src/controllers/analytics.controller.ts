@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 
 /**
  * GET /api/analytics/dashboard
@@ -13,87 +13,175 @@ export async function getDashboardAnalytics(
   try {
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
+    // Calculate start of month for "thisMonth" stats
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
     // Fetch lead stats
-    const leadStats = await db.getLeadStats(organizationId);
+    const [
+      totalLeads,
+      leadsByStatus,
+      leadsThisMonth,
+      leadScoreAvg,
+    ] = await Promise.all([
+      prisma.lead.count({ where: { organizationId } }),
+      prisma.lead.groupBy({
+        by: ['status'],
+        where: { organizationId },
+        _count: true,
+      }),
+      prisma.lead.count({
+        where: { organizationId, createdAt: { gte: startOfMonth } },
+      }),
+      prisma.lead.aggregate({
+        where: { organizationId },
+        _avg: { score: true },
+      }),
+    ]);
+
+    const statusCounts: Record<string, number> = {};
+    leadsByStatus.forEach((item) => {
+      statusCounts[item.status] = item._count;
+    });
+
+    const leadStats = {
+      total: totalLeads,
+      new: statusCounts['NEW'] || 0,
+      qualified: statusCounts['QUALIFIED'] || 0,
+      contacted: statusCounts['CONTACTED'] || 0,
+      converted: statusCounts['WON'] || 0,
+      thisMonth: leadsThisMonth,
+      averageScore: Math.round(leadScoreAvg._avg.score || 0),
+      byStatus: statusCounts,
+    };
 
     // Fetch project stats
-    const projectStats = await db.getProjectStats(organizationId);
+    const [totalProjects, projectsByStatus, totalHoursAgg] = await Promise.all([
+      prisma.project.count({ where: { organizationId } }),
+      prisma.project.groupBy({
+        by: ['status'],
+        where: { organizationId },
+        _count: true,
+      }),
+      prisma.project.aggregate({
+        where: { organizationId },
+        _sum: { totalHours: true },
+      }),
+    ]);
 
-    // Fetch invoice stats
-    const invoices = await db.findManyInvoices({ organizationId });
+    const projectStatusCounts: Record<string, number> = {};
+    projectsByStatus.forEach((item) => {
+      projectStatusCounts[item.status] = item._count;
+    });
 
-    const totalRevenue = invoices
-      .filter((inv: any) => inv.status === 'PAID')
-      .reduce((sum: number, inv: any) => sum + inv.paidAmount, 0);
+    const projectStats = {
+      total: totalProjects,
+      active: projectStatusCounts['ACTIVE'] || 0,
+      completed: projectStatusCounts['COMPLETED'] || 0,
+      onHold: projectStatusCounts['ON_HOLD'] || 0,
+      totalHoursTracked: totalHoursAgg._sum.totalHours || 0,
+      byStatus: projectStatusCounts,
+    };
 
-    const outstandingRevenue = invoices
-      .filter((inv: any) => inv.status !== 'PAID' && inv.status !== 'CANCELLED')
-      .reduce((sum: number, inv: any) => sum + (inv.total - inv.paidAmount), 0);
+    // Fetch financial stats (invoices)
+    const [
+      totalInvoices,
+      paidRevenue,
+      outstandingRevenue,
+      unpaidInvoiceCount,
+    ] = await Promise.all([
+      prisma.invoice.count({ where: { organizationId } }),
+      prisma.invoice.aggregate({
+        where: { organizationId, status: 'PAID' },
+        _sum: { paidAmount: true },
+      }),
+      prisma.invoice.aggregate({
+        where: {
+          organizationId,
+          status: { notIn: ['PAID', 'CANCELLED'] },
+        },
+        _sum: { total: true, paidAmount: true },
+      }),
+      prisma.invoice.count({
+        where: {
+          organizationId,
+          status: { notIn: ['PAID', 'CANCELLED'] },
+        },
+      }),
+    ]);
 
-    const unpaidInvoices = invoices.filter((inv: any) =>
-      inv.status !== 'PAID' && inv.status !== 'CANCELLED'
-    );
+    const totalRevenue = paidRevenue._sum.paidAmount || 0;
+    const outstanding = (outstandingRevenue._sum.total || 0) - (outstandingRevenue._sum.paidAmount || 0);
 
-    // Get task stats
-    const tasks = await db.findManyTasks({ organizationId });
-    const completedTasks = tasks.filter((t: any) => t.status === 'DONE').length;
-    const inProgressTasks = tasks.filter((t: any) => t.status === 'IN_PROGRESS').length;
+    // Fetch task stats
+    const [totalTasks, tasksByStatus] = await Promise.all([
+      prisma.task.count({ where: { organizationId } }),
+      prisma.task.groupBy({
+        by: ['status'],
+        where: { organizationId },
+        _count: true,
+      }),
+    ]);
 
-    // Get time tracking stats
-    const projects = await db.findManyProjects({ organizationId });
-    const totalHoursTracked = projects.reduce((sum: number, p: any) => sum + (p.totalHours || 0), 0);
+    const taskStatusCounts: Record<string, number> = {};
+    tasksByStatus.forEach((item) => {
+      taskStatusCounts[item.status] = item._count;
+    });
 
-    // Get customer count
-    const customers = await db.findManyCustomers({ organizationId });
+    const completedTasks = taskStatusCounts['DONE'] || 0;
+    const inProgressTasks = taskStatusCounts['IN_PROGRESS'] || 0;
 
-    // Get meeting stats
-    const meetings = await db.findManyMeetings({ organizationId });
-    const upcomingMeetings = meetings.filter((m: any) => m.status === 'UPCOMING').length;
+    // Fetch customer count
+    const totalCustomers = await prisma.customer.count({ where: { organizationId } });
+
+    // Fetch meeting stats
+    const [totalMeetings, upcomingMeetings] = await Promise.all([
+      prisma.meeting.count({ where: { organizationId } }),
+      prisma.meeting.count({ where: { organizationId, status: 'UPCOMING' } }),
+    ]);
+
+    // Calculate summary metrics
+    const conversionRate = leadStats.total > 0
+      ? ((leadStats.converted / leadStats.total) * 100).toFixed(1)
+      : '0.0';
+
+    const activeProjectsPercentage = projectStats.total > 0
+      ? ((projectStats.active / projectStats.total) * 100).toFixed(1)
+      : '0.0';
+
+    const collectionRate = (totalRevenue + outstanding) > 0
+      ? ((totalRevenue / (totalRevenue + outstanding)) * 100).toFixed(1)
+      : '0.0';
 
     res.json({
       status: 'success',
       data: {
-        leads: {
-          total: leadStats.total,
-          new: leadStats.new,
-          qualified: leadStats.qualified,
-          contacted: leadStats.contacted,
-          converted: leadStats.converted,
-          thisMonth: leadStats.thisMonth,
-          averageScore: leadStats.averageScore,
-          byStatus: leadStats.byStatus,
-        },
-        projects: {
-          total: projectStats.total,
-          active: projectStats.active,
-          completed: projectStats.completed,
-          onHold: projectStats.onHold,
-          totalHoursTracked,
-          byStatus: projectStats.byStatus,
-        },
+        leads: leadStats,
+        projects: projectStats,
         financials: {
           totalRevenue,
-          outstandingRevenue,
-          totalInvoices: invoices.length,
-          unpaidInvoiceCount: unpaidInvoices.length,
+          outstandingRevenue: outstanding,
+          totalInvoices,
+          unpaidInvoiceCount,
           currency: 'EGP', // Default currency
         },
         tasks: {
-          total: tasks.length,
+          total: totalTasks,
           completed: completedTasks,
           inProgress: inProgressTasks,
         },
         customers: {
-          total: customers.length,
+          total: totalCustomers,
         },
         meetings: {
-          total: meetings.length,
+          total: totalMeetings,
           upcoming: upcomingMeetings,
         },
         summary: {
-          conversionRate: leadStats.total > 0 ? ((leadStats.converted / leadStats.total) * 100).toFixed(1) : '0.0',
-          activeProjectsPercentage: projectStats.total > 0 ? ((projectStats.active / projectStats.total) * 100).toFixed(1) : '0.0',
-          collectionRate: (totalRevenue + outstandingRevenue) > 0 ? ((totalRevenue / (totalRevenue + outstandingRevenue)) * 100).toFixed(1) : '0.0',
+          conversionRate,
+          activeProjectsPercentage,
+          collectionRate,
         },
       },
     });

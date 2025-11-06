@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { db } from '../utils/in-memory-db';
+import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
 import { logger } from '../utils/logger';
 
@@ -17,13 +17,25 @@ export async function getMilestones(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     // Verify project exists and belongs to organization
-    const project = await db.findProjectById(projectId, organizationId);
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+      },
+    });
+
     if (!project) {
       throw new AppError(404, 'Project not found');
     }
 
     // Get milestones
-    const milestones = await db.findManyMilestones({ projectId });
+    const milestones = await prisma.milestone.findMany({
+      where: { projectId },
+      include: {
+        project: true,
+      },
+      orderBy: { dueDate: 'asc' },
+    });
 
     res.json({
       status: 'success',
@@ -50,7 +62,13 @@ export async function createMilestone(
     const userId = req.headers['x-user-id'] as string || 'user_1';
 
     // Verify project exists and belongs to organization
-    const project = await db.findProjectById(projectId, organizationId);
+    const project = await prisma.project.findFirst({
+      where: {
+        id: projectId,
+        organizationId,
+      },
+    });
+
     if (!project) {
       throw new AppError(404, 'Project not found');
     }
@@ -64,20 +82,27 @@ export async function createMilestone(
     }
 
     // Create milestone
-    const milestone = await db.createMilestone({
-      ...data,
-      projectId,
-      dueDate: new Date(data.dueDate),
+    const milestone = await prisma.milestone.create({
+      data: {
+        ...data,
+        projectId,
+        dueDate: new Date(data.dueDate),
+      },
+      include: {
+        project: true,
+      },
     });
 
     // Create activity log
-    await db.createActivity({
-      organizationId,
-      userId,
-      action: 'CREATED',
-      entityType: 'milestone',
-      entityId: milestone.id,
-      description: `Created milestone: ${milestone.name}`,
+    await prisma.activity.create({
+      data: {
+        organizationId,
+        userId,
+        action: 'CREATED',
+        entityType: 'milestone',
+        entityId: milestone.id,
+        description: `Created milestone: ${milestone.name}`,
+      },
     });
 
     logger.info(`Milestone created: ${milestone.id} by user ${userId}`);
