@@ -19,6 +19,7 @@ import aiRoutes from './routes/ai.routes';
 import analyticsRoutes from './routes/analytics.routes';
 import reportsRoutes from './routes/reports.routes';
 import workflowsRoutes from './routes/workflows.routes';
+import paymentRoutes from './routes/payment.routes';
 
 const app: Application = express();
 
@@ -67,6 +68,7 @@ app.use('/api', aiRoutes);
 app.use('/api', analyticsRoutes);
 app.use('/api', reportsRoutes);
 app.use('/api', workflowsRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // API root
 app.get('/api', (req, res) => {
@@ -87,6 +89,7 @@ app.get('/api', (req, res) => {
       reports: '/api/reports',
       workflows: '/api/workflows',
       settings: '/api/settings/payment',
+      payments: '/api/payments/paymob/checkout',
       health: '/health',
     },
   });

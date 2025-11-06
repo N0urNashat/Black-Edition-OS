@@ -15,28 +15,37 @@ export async function getPaymentSettings(
   try {
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
-    // Get organization with settings
+    // Get organization with payment settings fields
     const organization = await prisma.organization.findUnique({
       where: { id: organizationId },
-      select: { settings: true },
+      select: {
+        payMobEnabled: true,
+        payMobApiKey: true,
+        payMobIntegrationId: true,
+        payMobHmacSecret: true,
+        instapayEnabled: true,
+        instapayLink: true,
+        bankTransferEnabled: true,
+        bankDetails: true,
+      },
     });
 
-    // Extract payment settings from organization settings
-    const settings = organization?.settings as any;
-    const paymentSettings = settings?.paymentSettings || {
-      payMobEnabled: false,
-      payMobApiKey: '',
-      payMobIntegrationId: '',
-      payMobHmacSecret: '',
-      instapayEnabled: false,
-      instapayLink: '',
-      bankTransferEnabled: false,
-      bankDetails: '',
-    };
+    if (!organization) {
+      throw new AppError('Organization not found', 404);
+    }
 
     res.json({
       status: 'success',
-      data: paymentSettings,
+      data: {
+        payMobEnabled: organization.payMobEnabled,
+        payMobApiKey: organization.payMobApiKey || '',
+        payMobIntegrationId: organization.payMobIntegrationId || '',
+        payMobHmacSecret: organization.payMobHmacSecret || '',
+        instapayEnabled: organization.instapayEnabled,
+        instapayLink: organization.instapayLink || '',
+        bankTransferEnabled: organization.bankTransferEnabled,
+        bankDetails: organization.bankDetails || '',
+      },
     });
   } catch (error) {
     next(error);
@@ -57,29 +66,30 @@ export async function updatePaymentSettings(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
     const userId = req.headers['x-user-id'] as string || 'user_1';
 
-    // Get current settings
-    const organization = await prisma.organization.findUnique({
+    // Build update data object with only provided fields
+    const updateData: any = {};
+    if (data.payMobEnabled !== undefined) updateData.payMobEnabled = data.payMobEnabled;
+    if (data.payMobApiKey !== undefined) updateData.payMobApiKey = data.payMobApiKey;
+    if (data.payMobIntegrationId !== undefined) updateData.payMobIntegrationId = data.payMobIntegrationId;
+    if (data.payMobHmacSecret !== undefined) updateData.payMobHmacSecret = data.payMobHmacSecret;
+    if (data.instapayEnabled !== undefined) updateData.instapayEnabled = data.instapayEnabled;
+    if (data.instapayLink !== undefined) updateData.instapayLink = data.instapayLink;
+    if (data.bankTransferEnabled !== undefined) updateData.bankTransferEnabled = data.bankTransferEnabled;
+    if (data.bankDetails !== undefined) updateData.bankDetails = data.bankDetails;
+
+    // Update organization payment settings
+    const updatedOrg = await prisma.organization.update({
       where: { id: organizationId },
-      select: { settings: true },
-    });
-
-    const currentSettings = (organization?.settings as any) || {};
-    const currentPaymentSettings = currentSettings.paymentSettings || {};
-
-    // Merge new payment settings with existing ones
-    const updatedPaymentSettings = {
-      ...currentPaymentSettings,
-      ...data,
-    };
-
-    // Update organization settings
-    await prisma.organization.update({
-      where: { id: organizationId },
-      data: {
-        settings: {
-          ...currentSettings,
-          paymentSettings: updatedPaymentSettings,
-        },
+      data: updateData,
+      select: {
+        payMobEnabled: true,
+        payMobApiKey: true,
+        payMobIntegrationId: true,
+        payMobHmacSecret: true,
+        instapayEnabled: true,
+        instapayLink: true,
+        bankTransferEnabled: true,
+        bankDetails: true,
       },
     });
 
@@ -99,7 +109,16 @@ export async function updatePaymentSettings(
 
     res.json({
       status: 'success',
-      data: updatedPaymentSettings,
+      data: {
+        payMobEnabled: updatedOrg.payMobEnabled,
+        payMobApiKey: updatedOrg.payMobApiKey || '',
+        payMobIntegrationId: updatedOrg.payMobIntegrationId || '',
+        payMobHmacSecret: updatedOrg.payMobHmacSecret || '',
+        instapayEnabled: updatedOrg.instapayEnabled,
+        instapayLink: updatedOrg.instapayLink || '',
+        bankTransferEnabled: updatedOrg.bankTransferEnabled,
+        bankDetails: updatedOrg.bankDetails || '',
+      },
     });
   } catch (error) {
     next(error);

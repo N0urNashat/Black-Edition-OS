@@ -1,5 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '@repo/database';
+import Anthropic from '@anthropic-ai/sdk';
+
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 /**
  * POST /api/ai/generate-proposal
@@ -44,7 +50,7 @@ Client Details:
 - Phone: ${lead.phone || 'N/A'}
 - Requirements: ${lead.requirements || 'Not specified'}
 - Budget: ${lead.budget || 'Not specified'}
-- Timeline: ${lead.expectedTimeline || 'Flexible'}
+- Timeline: ${lead.timeline || 'Flexible'}
 
 Please create a comprehensive proposal including:
 1. Executive Summary
@@ -56,60 +62,19 @@ Please create a comprehensive proposal including:
 
 Keep the tone professional yet approachable.`;
 
-    // TODO: In production, replace with actual Claude API call
-    // For now, return a mock response
-    const mockProposal = `# Project Proposal for ${lead.company || lead.name}
+    // Call Anthropic Claude API
+    const response = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 2048,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
 
-## Executive Summary
-We are pleased to present this proposal for developing a modern, professional website for ${lead.company || lead.name}. Our team at Black Edition Agency specializes in creating high-performance web solutions that drive business growth and enhance digital presence.
-
-## Scope of Work
-Based on our initial discussions, we understand your requirements include:
-${lead.requirements || 'A modern, responsive website with user-friendly design and functionality'}
-
-We will deliver a fully functional website with:
-- Responsive design optimized for all devices
-- Modern, intuitive user interface
-- Performance optimization
-- SEO-friendly architecture
-- Content management capabilities
-- Security best practices
-
-## Deliverables
-1. Custom website design (3 initial concepts)
-2. Fully responsive development
-3. Content Management System integration
-4. On-page SEO optimization
-5. Performance optimization
-6. 30 days of post-launch support
-7. Training documentation
-
-## Timeline
-We propose a ${lead.expectedTimeline || '8-12 week'} development timeline:
-- Week 1-2: Discovery & Design
-- Week 3-4: Design Refinement & Approval
-- Week 5-8: Development & Testing
-- Week 9-10: Content Integration
-- Week 11-12: Final Testing & Launch
-
-## Investment & Payment Terms
-Total Investment: ${lead.budget || 'To be discussed'}
-
-Payment Structure:
-- 30% upon contract signing
-- 40% upon design approval
-- 30% upon project completion
-
-## Next Steps
-1. Review and approve this proposal
-2. Schedule kickoff meeting
-3. Sign service agreement
-4. Begin discovery phase
-
-We look forward to partnering with you on this exciting project!
-
-Best regards,
-Black Edition Agency Team`;
+    const proposal = response.content[0].type === 'text' ? response.content[0].text : '';
 
     // Log activity
     await prisma.activity.create({
@@ -126,7 +91,7 @@ Black Edition Agency Team`;
     res.json({
       status: 'success',
       data: {
-        proposal: mockProposal,
+        proposal,
         leadId,
         generatedAt: new Date().toISOString(),
       },
@@ -235,48 +200,24 @@ Financial Statistics:
 
 What are the key insights, trends, and recommendations?`;
 
-    // TODO: In production, replace with actual Claude API call
-    // For now, return mock insights
-    const mockInsights = `## Key Insights & Recommendations
+    // Call Anthropic Claude API
+    const response = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    });
 
-### Lead Conversion Performance
-${leadStats.converted > 0
-  ? `Your conversion rate is ${((leadStats.converted / leadStats.total) * 100).toFixed(1)}%. ${
-      leadStats.converted / leadStats.total > 0.2
-        ? "This is excellent - you're converting leads effectively!"
-        : "There's room for improvement in lead nurturing and follow-up processes."
-    }`
-  : "Focus on converting your qualified leads into projects."}
-
-### Project Pipeline
-${projectStats.active > 0
-  ? `You have ${projectStats.active} active projects. ${
-      projectStats.active > 5
-        ? "Monitor capacity to ensure quality delivery."
-        : "Consider business development to fill the pipeline."
-    }`
-  : "No active projects - prioritize converting qualified leads."}
-
-### Financial Health
-${totalRevenue > 0
-  ? `Total revenue of $${totalRevenue} is ${outstanding > 0 ? `healthy, but you have $${outstanding} in outstanding invoices.` : "strong with all invoices paid."}`
-  : "Focus on closing deals and invoicing completed work."}
-
-${outstanding > totalRevenue * 0.3
-  ? "\n⚠️ **Action Required**: Outstanding invoices exceed 30% of total revenue. Follow up on overdue payments."
-  : ""}
-
-### Recommendations
-1. ${leadStats.new > leadStats.contacted ? "Prioritize contacting new leads within 24 hours" : "Continue your strong lead follow-up process"}
-2. ${projectStats.onHold > 0 ? `Review ${projectStats.onHold} on-hold projects for reactivation opportunities` : "Maintain project momentum"}
-3. ${outstanding > 0 ? "Implement automated payment reminders for outstanding invoices" : "Maintain excellent payment collection practices"}
-
-**Overall Score**: ${leadStats.converted > 3 && projectStats.active > 0 ? "Strong" : leadStats.converted > 0 ? "Growing" : "Building"} - Keep monitoring these metrics weekly.`;
+    const insights = response.content[0].type === 'text' ? response.content[0].text : '';
 
     res.json({
       status: 'success',
       data: {
-        insights: mockInsights,
+        insights,
         stats: {
           leads: leadStats,
           projects: projectStats,
