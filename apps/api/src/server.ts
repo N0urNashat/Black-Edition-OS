@@ -15,6 +15,10 @@ import timeTrackingRoutes from './routes/time-tracking.routes';
 import settingsRoutes from './routes/settings.routes';
 import invoicesRoutes from './routes/invoices.routes';
 import meetingsRoutes from './routes/meetings.routes';
+import aiRoutes from './routes/ai.routes';
+import analyticsRoutes from './routes/analytics.routes';
+import reportsRoutes from './routes/reports.routes';
+import workflowsRoutes from './routes/workflows.routes';
 
 const app: Application = express();
 
@@ -59,6 +63,10 @@ app.use('/api', timeTrackingRoutes);
 app.use('/api', settingsRoutes);
 app.use('/api', invoicesRoutes);
 app.use('/api', meetingsRoutes);
+app.use('/api', aiRoutes);
+app.use('/api', analyticsRoutes);
+app.use('/api', reportsRoutes);
+app.use('/api', workflowsRoutes);
 
 // API root
 app.get('/api', (req, res) => {
@@ -74,6 +82,10 @@ app.get('/api', (req, res) => {
       timeTracking: '/api/projects/:projectId/time-entries',
       invoices: '/api/invoices',
       meetings: '/api/meetings',
+      ai: '/api/ai',
+      analytics: '/api/analytics/dashboard',
+      reports: '/api/reports',
+      workflows: '/api/workflows',
       settings: '/api/settings/payment',
       health: '/health',
     },

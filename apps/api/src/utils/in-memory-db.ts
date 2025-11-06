@@ -197,6 +197,33 @@ interface Meeting {
   createdAt: Date;
 }
 
+interface Report {
+  id: string;
+  organizationId: string;
+  title: string;
+  description: string | null;
+  type: string; // FINANCIAL, PERFORMANCE, CUSTOM
+  dateRange: string; // e.g., "2024-01-01 to 2024-12-31"
+  filters: any; // JSON object with filter criteria
+  data: any; // JSON object with report data
+  generatedById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Workflow {
+  id: string;
+  organizationId: string;
+  name: string;
+  description: string | null;
+  trigger: string; // LEAD_CREATED, PROJECT_COMPLETED, etc.
+  actions: any; // JSON array of actions
+  isActive: boolean;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
@@ -210,6 +237,8 @@ class InMemoryDataStore {
   private invoiceLineItems: Map<string, InvoiceLineItem> = new Map();
   private organizationSettings: Map<string, any> = new Map();
   private meetings: Map<string, Meeting> = new Map();
+  private reports: Map<string, Report> = new Map();
+  private workflows: Map<string, Workflow> = new Map();
 
   constructor() {
     this.seedData();
@@ -1131,10 +1160,138 @@ class InMemoryDataStore {
 
     return {
       total: leads.length,
+      new: statusCounts['NEW'] || 0,
+      qualified: statusCounts['QUALIFIED'] || 0,
+      contacted: statusCounts['CONTACTED'] || 0,
+      converted: statusCounts['CONVERTED'] || 0,
       thisMonth,
       averageScore: avgScore,
       byStatus: statusCounts,
     };
+  }
+
+  async getProjectStats(organizationId: string) {
+    const projects = Array.from(this.projects.values()).filter(p => p.organizationId === organizationId);
+
+    const statusCounts = projects.reduce((acc, project) => {
+      acc[project.status] = (acc[project.status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return {
+      total: projects.length,
+      active: statusCounts['ACTIVE'] || 0,
+      completed: statusCounts['COMPLETED'] || 0,
+      onHold: statusCounts['ON_HOLD'] || 0,
+      byStatus: statusCounts,
+    };
+  }
+
+  // Report methods
+  async createReport(data: Partial<Report>) {
+    const id = this.generateId();
+    const report: Report = {
+      id,
+      organizationId: data.organizationId!,
+      title: data.title!,
+      description: data.description || null,
+      type: data.type || 'CUSTOM',
+      dateRange: data.dateRange || '',
+      filters: data.filters || {},
+      data: data.data || {},
+      generatedById: data.generatedById!,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.reports.set(id, report);
+    return report;
+  }
+
+  async findManyReports(filter: any = {}) {
+    let reports = Array.from(this.reports.values());
+
+    if (filter.organizationId) {
+      reports = reports.filter(r => r.organizationId === filter.organizationId);
+    }
+
+    if (filter.type) {
+      reports = reports.filter(r => r.type === filter.type);
+    }
+
+    // Sort by created date descending
+    reports.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    return reports;
+  }
+
+  async findReportById(id: string, organizationId: string) {
+    const report = this.reports.get(id);
+    if (!report || report.organizationId !== organizationId) {
+      return null;
+    }
+    return report;
+  }
+
+  // Workflow methods
+  async createWorkflow(data: Partial<Workflow>) {
+    const id = this.generateId();
+    const workflow: Workflow = {
+      id,
+      organizationId: data.organizationId!,
+      name: data.name!,
+      description: data.description || null,
+      trigger: data.trigger!,
+      actions: data.actions || [],
+      isActive: data.isActive !== undefined ? data.isActive : true,
+      createdById: data.createdById!,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.workflows.set(id, workflow);
+    return workflow;
+  }
+
+  async findManyWorkflows(filter: any = {}) {
+    let workflows = Array.from(this.workflows.values());
+
+    if (filter.organizationId) {
+      workflows = workflows.filter(w => w.organizationId === filter.organizationId);
+    }
+
+    if (filter.isActive !== undefined) {
+      workflows = workflows.filter(w => w.isActive === filter.isActive);
+    }
+
+    // Sort by created date descending
+    workflows.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    return workflows;
+  }
+
+  async findWorkflowById(id: string, organizationId: string) {
+    const workflow = this.workflows.get(id);
+    if (!workflow || workflow.organizationId !== organizationId) {
+      return null;
+    }
+    return workflow;
+  }
+
+  async updateWorkflow(id: string, organizationId: string, data: Partial<Workflow>) {
+    const workflow = await this.findWorkflowById(id, organizationId);
+    if (!workflow) {
+      return null;
+    }
+
+    const updated = {
+      ...workflow,
+      ...data,
+      updatedAt: new Date(),
+    };
+
+    this.workflows.set(id, updated);
+    return updated;
   }
 }
 

@@ -1,4 +1,8 @@
-import { auth, currentUser } from '@clerk/nextjs';
+'use client';
+
+import { useParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { useUser } from '@clerk/nextjs';
 import {
   Card,
   CardContent,
@@ -6,16 +10,32 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Users, FolderKanban, DollarSign, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Users, FolderKanban, DollarSign, TrendingUp, TrendingDown, Minus, Brain, Sparkles } from 'lucide-react';
 import { Separator } from '@/components/ui/separator';
 
-export default async function DashboardPage({
-  params,
-}: {
-  params: { orgSlug: string };
-}) {
-  const user = await currentUser();
+export default function DashboardPage() {
+  const params = useParams();
+  const { user } = useUser();
+  const orgSlug = params.orgSlug as string;
+
+  // Fetch AI insights
+  const { data: aiInsights, isLoading: loadingInsights } = useQuery({
+    queryKey: ['ai-insights'],
+    queryFn: async () => {
+      const response = await fetch('http://localhost:4000/api/ai/generate-report-insights', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': 'org_black_edition',
+          'x-user-id': 'user_1',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch insights');
+      const data = await response.json();
+      return data.data;
+    },
+  });
 
   // TODO: Fetch real data from database
   const stats = {
@@ -182,6 +202,44 @@ export default async function DashboardPage({
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
+        {/* AI Insights */}
+        <Card className="col-span-1">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-[#93DA97]" />
+              AI Insights
+            </CardTitle>
+            <CardDescription>
+              AI-powered analysis of your business metrics
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingInsights ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Sparkles className="h-4 w-4 animate-pulse" />
+                  <span className="text-sm">Analyzing your data...</span>
+                </div>
+                <div className="space-y-2">
+                  <div className="h-3 bg-gray-200 rounded w-full animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded w-5/6 animate-pulse"></div>
+                  <div className="h-3 bg-gray-200 rounded w-4/6 animate-pulse"></div>
+                </div>
+              </div>
+            ) : aiInsights ? (
+              <div className="prose prose-sm max-w-none">
+                <div className="text-sm whitespace-pre-wrap text-muted-foreground">
+                  {aiInsights.insights}
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                AI insights unavailable
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Recent Activity */}
         <Card className="col-span-1">
           <CardHeader>
@@ -216,55 +274,55 @@ export default async function DashboardPage({
             </div>
           </CardContent>
         </Card>
-
-        {/* Quick Actions */}
-        <Card className="col-span-1">
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common tasks and shortcuts</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3">
-              <a
-                href={`/${params.orgSlug}/leads/new`}
-                className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors"
-              >
-                <Users className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Add New Lead</p>
-                  <p className="text-xs text-muted-foreground">
-                    Create a new lead entry
-                  </p>
-                </div>
-              </a>
-              <a
-                href={`/${params.orgSlug}/projects/new`}
-                className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors"
-              >
-                <FolderKanban className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Start New Project</p>
-                  <p className="text-xs text-muted-foreground">
-                    Create a new project
-                  </p>
-                </div>
-              </a>
-              <a
-                href={`/${params.orgSlug}/invoices/new`}
-                className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors"
-              >
-                <DollarSign className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Generate Invoice</p>
-                  <p className="text-xs text-muted-foreground">
-                    Create a new invoice
-                  </p>
-                </div>
-              </a>
-            </div>
-          </CardContent>
-        </Card>
       </div>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Quick Actions</CardTitle>
+          <CardDescription>Common tasks and shortcuts</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 md:grid-cols-3">
+            <a
+              href={`/${orgSlug}/leads/new`}
+              className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors"
+            >
+              <Users className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Add New Lead</p>
+                <p className="text-xs text-muted-foreground">
+                  Create a new lead entry
+                </p>
+              </div>
+            </a>
+            <a
+              href={`/${orgSlug}/projects/new`}
+              className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors"
+            >
+              <FolderKanban className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Start New Project</p>
+                <p className="text-xs text-muted-foreground">
+                  Create a new project
+                </p>
+              </div>
+            </a>
+            <a
+              href={`/${orgSlug}/invoices/new`}
+              className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent transition-colors"
+            >
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Generate Invoice</p>
+                <p className="text-xs text-muted-foreground">
+                  Create a new invoice
+                </p>
+              </div>
+            </a>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

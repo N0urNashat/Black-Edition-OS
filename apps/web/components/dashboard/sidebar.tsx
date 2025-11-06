@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Menu,
   X,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -106,6 +107,11 @@ export function Sidebar({ orgSlug }: SidebarProps) {
       title: 'AI Tools',
       href: `/${orgSlug}/ai`,
       icon: Brain,
+    },
+    {
+      title: 'Automations',
+      href: `/${orgSlug}/automations`,
+      icon: Zap,
     },
     {
       title: 'Settings',
