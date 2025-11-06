@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config/env';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/error-handler';
+import leadsRoutes from './routes/leads.routes';
 
 const app: Application = express();
 
@@ -41,8 +42,18 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api', (req, res) => {
-  res.json({ message: 'BLACK EDITION OS API - Coming Soon' });
+app.use('/api/leads', leadsRoutes);
+
+// API root
+app.get('/api', (req, res) => {
+  res.json({
+    message: 'BLACK EDITION OS API',
+    version: '1.0.0',
+    endpoints: {
+      leads: '/api/leads',
+      health: '/health',
+    },
+  });
 });
 
 // 404 handler
