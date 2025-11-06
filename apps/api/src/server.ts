@@ -8,6 +8,7 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/error-handler';
 import leadsRoutes from './routes/leads.routes';
 import customersRoutes from './routes/customers.routes';
+import projectsRoutes from './routes/projects.routes';
 
 const app: Application = express();
 
@@ -45,6 +46,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/leads', leadsRoutes);
 app.use('/api/customers', customersRoutes);
+app.use('/api/projects', projectsRoutes);
 
 // API root
 app.get('/api', (req, res) => {
@@ -54,6 +56,7 @@ app.get('/api', (req, res) => {
     endpoints: {
       leads: '/api/leads',
       customers: '/api/customers',
+      projects: '/api/projects',
       health: '/health',
     },
   });

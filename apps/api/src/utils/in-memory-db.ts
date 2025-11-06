@@ -73,11 +73,34 @@ interface Customer {
   updatedAt: Date;
 }
 
+interface Project {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  name: string;
+  description: string | null;
+  status: string; // PLANNING, IN_PROGRESS, ON_HOLD, COMPLETED, CANCELLED
+  priority: string; // LOW, MEDIUM, HIGH, URGENT
+  startDate: Date | null;
+  endDate: Date | null;
+  budget: number | null;
+  estimatedHours: number | null;
+  actualHours: number;
+  progress: number; // 0-100
+  health: string; // ON_TRACK, AT_RISK, DELAYED, CRITICAL
+  tags: string[];
+  customFields: any;
+  createdById: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
   private activities: Map<string, Activity> = new Map();
   private customers: Map<string, Customer> = new Map();
+  private projects: Map<string, Project> = new Map();
 
   constructor() {
     this.seedData();
@@ -439,6 +462,94 @@ class InMemoryDataStore {
       ...customer,
       createdBy: this.users.get(customer.createdById),
       assignedTo: customer.assignedToId ? this.users.get(customer.assignedToId) : null,
+    };
+  }
+
+  // Project methods
+  async createProject(data: Partial<Project>) {
+    const id = this.generateId();
+    const project: Project = {
+      id,
+      organizationId: data.organizationId!,
+      customerId: data.customerId!,
+      name: data.name!,
+      description: data.description || null,
+      status: data.status || 'PLANNING',
+      priority: data.priority || 'MEDIUM',
+      startDate: data.startDate || null,
+      endDate: data.endDate || null,
+      budget: data.budget || null,
+      estimatedHours: data.estimatedHours || null,
+      actualHours: data.actualHours || 0,
+      progress: data.progress || 0,
+      health: data.health || 'ON_TRACK',
+      tags: data.tags || [],
+      customFields: data.customFields || null,
+      createdById: data.createdById!,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.projects.set(id, project);
+
+    return {
+      ...project,
+      createdBy: this.users.get(project.createdById),
+      customer: this.customers.get(project.customerId),
+    };
+  }
+
+  async findManyProjects(filter: any = {}) {
+    let filtered = Array.from(this.projects.values());
+
+    // Filter by organizationId
+    if (filter.organizationId) {
+      filtered = filtered.filter((p) => p.organizationId === filter.organizationId);
+    }
+
+    // Filter by customerId
+    if (filter.customerId) {
+      filtered = filtered.filter((p) => p.customerId === filter.customerId);
+    }
+
+    // Filter by status
+    if (filter.status) {
+      filtered = filtered.filter((p) => p.status === filter.status);
+    }
+
+    // Search by name or description
+    if (filter.OR) {
+      filtered = filtered.filter((p) => {
+        const searchFields = filter.OR.map((condition: any) => {
+          if (condition.name?.contains) {
+            return p.name?.toLowerCase().includes(condition.name.contains.toLowerCase());
+          }
+          if (condition.description?.contains) {
+            return p.description?.toLowerCase().includes(condition.description.contains.toLowerCase());
+          }
+          return false;
+        });
+        return searchFields.some((match) => match);
+      });
+    }
+
+    return filtered.map((project) => ({
+      ...project,
+      createdBy: this.users.get(project.createdById),
+      customer: this.customers.get(project.customerId),
+    }));
+  }
+
+  async findProjectById(id: string, organizationId: string) {
+    const project = this.projects.get(id);
+    if (!project || project.organizationId !== organizationId) {
+      return null;
+    }
+
+    return {
+      ...project,
+      createdBy: this.users.get(project.createdById),
+      customer: this.customers.get(project.customerId),
     };
   }
 
