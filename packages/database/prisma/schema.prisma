@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// BLACK EDITION OS - Complete Database Schema
+// Multi-tenant Agency Operating System
 
 generator client {
   provider = "prisma-client-js"
@@ -21,14 +21,31 @@ model User {
   name           String?
   avatar         String?
   role           UserRole @default(MEMBER)
+  phone          String?
+  title          String?
   organizationId String
+  isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
+  // Relations
+  assignedTasks     Task[]           @relation("TaskAssignee")
+  createdLeads      Lead[]           @relation("LeadCreator")
+  assignedLeads     Lead[]           @relation("LeadAssignee")
+  createdProjects   Project[]        @relation("ProjectCreator")
+  projectMembers    ProjectMember[]
+  timeEntries       TimeEntry[]
+  activities        Activity[]
+  createdInvoices   Invoice[]
+  workflowCreator   Workflow[]
+  reportCreator     Report[]
+  notifications     Notification[]
+
   @@index([organizationId])
   @@index([clerkId])
+  @@index([email])
   @@map("users")
 }
 
@@ -38,14 +55,529 @@ model Organization {
   name      String
   slug      String   @unique
   logo      String?
-  settings  Json?
+  website   String?
+  phone     String?
+  email     String?
+  address   Json?    // { street, city, state, zip, country }
+  settings  Json?    // { timezone, currency, language, branding }
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  // Relations
+  users         User[]
+  leads         Lead[]
+  customers     Customer[]
+  projects      Project[]
+  invoices      Invoice[]
+  workflows     Workflow[]
+  reports       Report[]
+  activities    Activity[]
+  files         File[]
 
   @@index([slug])
   @@map("organizations")
+}
+
+// ====================
+// CRM - LEADS & CUSTOMERS
+// ====================
+
+model Lead {
+  id             String     @id @default(cuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  website        String?
+  status         LeadStatus @default(NEW)
+  score          Int        @default(0)
+  source         String?    // referral, website, social, cold-outreach
+  budget         Decimal?   @db.Decimal(12, 2)
+  timeline       String?    // urgent, soon, future
+  decisionMaker  Boolean    @default(false)
+  requirements   String?    @db.Text
+  notes          String?    @db.Text
+  customFields   Json?
+  createdById    String
+  assignedToId   String?
+  convertedAt    DateTime?
+  customerId     String?    // Link to customer after conversion
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation("LeadCreator", fields: [createdById], references: [id])
+  assignedTo   User?        @relation("LeadAssignee", fields: [assignedToId], references: [id])
+  customer     Customer?    @relation(fields: [customerId], references: [id])
+
+  activities   Activity[]
+  files        File[]       @relation("LeadFiles")
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([createdById])
+  @@index([assignedToId])
+  @@index([email])
+  @@map("leads")
+}
+
+model Customer {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  email          String?
+  phone          String?
+  company        String?
+  website        String?
+  status         CustomerStatus @default(ACTIVE)
+  servicePackage ServicePackage?
+  contractStart  DateTime?
+  contractEnd    DateTime?
+  address        Json?
+  notes          String?        @db.Text
+  customFields   Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relations
+  projects      Project[]
+  invoices      Invoice[]
+  activities    Activity[]
+  files         File[]         @relation("CustomerFiles")
+  leadsConverted Lead[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([email])
+  @@map("customers")
+}
+
+// ====================
+// PROJECT & TASK MANAGEMENT
+// ====================
+
+model Project {
+  id             String        @id @default(cuid())
+  organizationId String
+  customerId     String
+  name           String
+  description    String?       @db.Text
+  status         ProjectStatus @default(PLANNING)
+  priority       Priority      @default(MEDIUM)
+  startDate      DateTime?
+  endDate        DateTime?
+  budget         Decimal?      @db.Decimal(12, 2)
+  estimatedHours Decimal?      @db.Decimal(8, 2)
+  actualHours    Decimal       @default(0) @db.Decimal(8, 2)
+  progress       Int           @default(0) // 0-100
+  health         ProjectHealth @default(ON_TRACK)
+  tags           String[]
+  customFields   Json?
+  createdById    String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer        @relation(fields: [customerId], references: [id])
+  createdBy    User            @relation("ProjectCreator", fields: [createdById], references: [id])
+
+  // Relations
+  tasks         Task[]
+  members       ProjectMember[]
+  milestones    Milestone[]
+  timeEntries   TimeEntry[]
+  invoices      Invoice[]
+  files         File[]          @relation("ProjectFiles")
+  activities    Activity[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdById])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  role      String   @default("member") // lead, member, viewer
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+  @@map("project_members")
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  projectId   String
+  name        String
+  description String?   @db.Text
+  dueDate     DateTime
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("milestones")
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  projectId     String
+  parentTaskId  String?    // For subtasks
+  title         String
+  description   String?    @db.Text
+  status        TaskStatus @default(TODO)
+  priority      Priority   @default(MEDIUM)
+  assignedToId  String?
+  dueDate       DateTime?
+  startDate     DateTime?
+  estimatedTime Decimal?   @db.Decimal(6, 2) // hours
+  actualTime    Decimal    @default(0) @db.Decimal(6, 2)
+  tags          String[]
+  position      Int        @default(0) // For ordering
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignedTo   User?            @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  parentTask   Task?            @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
+
+  // Relations
+  subtasks     Task[]           @relation("Subtasks")
+  dependencies TaskDependency[] @relation("DependentTask")
+  blockedBy    TaskDependency[] @relation("BlockingTask")
+  timeEntries  TimeEntry[]
+  comments     TaskComment[]
+  activities   Activity[]
+
+  @@index([projectId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([parentTaskId])
+  @@map("tasks")
+}
+
+model TaskDependency {
+  id              String   @id @default(cuid())
+  taskId          String   // The task that is blocked
+  dependsOnTaskId String   // The task that must be completed first
+  createdAt       DateTime @default(now())
+
+  task          Task @relation("DependentTask", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask Task @relation("BlockingTask", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnTaskId])
+  @@index([taskId])
+  @@index([dependsOnTaskId])
+  @@map("task_dependencies")
+}
+
+model TaskComment {
+  id        String   @id @default(cuid())
+  taskId    String
+  userId    String
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("task_comments")
+}
+
+// ====================
+// TIME TRACKING
+// ====================
+
+model TimeEntry {
+  id          String    @id @default(cuid())
+  userId      String
+  projectId   String
+  taskId      String?
+  description String?
+  duration    Decimal   @db.Decimal(6, 2) // hours
+  date        DateTime  @default(now())
+  startTime   DateTime?
+  endTime     DateTime?
+  billable    Boolean   @default(true)
+  approved    Boolean   @default(false)
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([taskId])
+  @@index([date])
+  @@map("time_entries")
+}
+
+// ====================
+// FINANCIAL - INVOICES & PAYMENTS
+// ====================
+
+model Invoice {
+  id                String        @id @default(cuid())
+  organizationId    String
+  customerId        String
+  projectId         String?
+  invoiceNumber     String        @unique
+  status            InvoiceStatus @default(DRAFT)
+  issueDate         DateTime      @default(now())
+  dueDate           DateTime
+  subtotal          Decimal       @db.Decimal(12, 2)
+  taxRate           Decimal       @default(0) @db.Decimal(5, 2)
+  taxAmount         Decimal       @default(0) @db.Decimal(12, 2)
+  discount          Decimal       @default(0) @db.Decimal(12, 2)
+  total             Decimal       @db.Decimal(12, 2)
+  paidAmount        Decimal       @default(0) @db.Decimal(12, 2)
+  currency          String        @default("USD")
+  notes             String?       @db.Text
+  terms             String?       @db.Text
+  sentAt            DateTime?
+  viewedAt          DateTime?
+  paidAt            DateTime?
+  recurring         Boolean       @default(false)
+  recurringInterval String?       // monthly, quarterly, yearly
+  createdById       String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer          @relation(fields: [customerId], references: [id])
+  project      Project?          @relation(fields: [projectId], references: [id])
+  createdBy    User              @relation(fields: [createdById], references: [id])
+
+  // Relations
+  lineItems    InvoiceLineItem[]
+  payments     Payment[]
+  activities   Activity[]
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdById])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal @db.Decimal(10, 2)
+  rate        Decimal @db.Decimal(12, 2)
+  amount      Decimal @db.Decimal(12, 2)
+  taxable     Boolean @default(true)
+  position    Int     @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_line_items")
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  invoiceId     String
+  amount        Decimal       @db.Decimal(12, 2)
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  transactionId String?       // External payment gateway transaction ID
+  gateway       String?       // paymob, stripe
+  paidAt        DateTime?
+  notes         String?       @db.Text
+  metadata      Json?         // Store gateway-specific data
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([status])
+  @@index([transactionId])
+  @@map("payments")
+}
+
+// ====================
+// FILES & DOCUMENTS
+// ====================
+
+model File {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  originalName   String
+  size           Int      // bytes
+  mimeType       String
+  url            String
+  path           String
+  bucket         String   @default("black-edition-files")
+  uploadedById   String
+
+  // Polymorphic relations via optional foreign keys
+  leadId         String?
+  customerId     String?
+  projectId      String?
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation("LeadFiles", fields: [leadId], references: [id], onDelete: Cascade)
+  customer     Customer?    @relation("CustomerFiles", fields: [customerId], references: [id], onDelete: Cascade)
+  project      Project?     @relation("ProjectFiles", fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([leadId])
+  @@index([customerId])
+  @@index([projectId])
+  @@map("files")
+}
+
+// ====================
+// ACTIVITY LOG
+// ====================
+
+model Activity {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  action         ActivityType
+  entityType     String       // lead, customer, project, task, invoice, etc.
+  entityId       String
+  description    String
+  metadata       Json?        // Store additional context
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Polymorphic relations for quick access
+  lead    Lead?    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  task    Task?    @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("activities")
+}
+
+// ====================
+// WORKFLOW AUTOMATION
+// ====================
+
+model Workflow {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?        @db.Text
+  trigger        Json           // { type: 'lead_created', conditions: {...} }
+  actions        Json           // Array of actions to execute
+  active         Boolean        @default(true)
+  createdById    String
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User              @relation(fields: [createdById], references: [id])
+
+  // Relations
+  executions   WorkflowExecution[]
+
+  @@index([organizationId])
+  @@index([active])
+  @@map("workflows")
+}
+
+model WorkflowExecution {
+  id         String             @id @default(cuid())
+  workflowId String
+  status     WorkflowStatus     @default(PENDING)
+  startedAt  DateTime           @default(now())
+  completedAt DateTime?
+  error      String?            @db.Text
+  logs       Json?              // Execution logs
+  metadata   Json?
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("workflow_executions")
+}
+
+// ====================
+// REPORTS
+// ====================
+
+model Report {
+  id             String     @id @default(cuid())
+  organizationId String
+  name           String
+  type           ReportType
+  period         String     // daily, weekly, bi-weekly, monthly, custom
+  startDate      DateTime
+  endDate        DateTime
+  data           Json       // Report data
+  insights       String?    @db.Text // AI-generated insights
+  generatedById  String
+  generatedAt    DateTime   @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  generatedBy  User         @relation(fields: [generatedById], references: [id])
+
+  @@index([organizationId])
+  @@index([type])
+  @@index([generatedAt])
+  @@map("reports")
+}
+
+// ====================
+// NOTIFICATIONS
+// ====================
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String   @db.Text
+  type      String   // info, success, warning, error
+  read      Boolean  @default(false)
+  readAt    DateTime?
+  actionUrl String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+  @@map("notifications")
 }
 
 // ====================
@@ -57,4 +589,118 @@ enum UserRole {
   MANAGER
   MEMBER
   CLIENT
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  CHURNED
+}
+
+enum ServicePackage {
+  STARTER
+  GROWTH
+  PREMIUM
+  ENTERPRISE
+  CUSTOM
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectHealth {
+  ON_TRACK
+  AT_RISK
+  DELAYED
+  CRITICAL
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  BANK_TRANSFER
+  PAYMOB
+  STRIPE
+  CASH
+  CHECK
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum ActivityType {
+  CREATED
+  UPDATED
+  DELETED
+  STATUS_CHANGED
+  ASSIGNED
+  COMMENTED
+  CONVERTED
+  EMAILED
+  CALLED
+  MEETING
+  NOTE_ADDED
+  FILE_UPLOADED
+}
+
+enum WorkflowStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ReportType {
+  SALES
+  FINANCIAL
+  PROJECT
+  TIME_TRACKING
+  PERFORMANCE
+  CUSTOM
 }
