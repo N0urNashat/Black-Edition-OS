@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Edit,
@@ -25,22 +25,14 @@ import { Separator } from '@/components/ui/separator';
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const leadId = params.id as string;
   const orgSlug = params.orgSlug as string;
 
-  const [lead, setLead] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetchLead();
-  }, [leadId]);
-
-  async function fetchLead() {
-    setLoading(true);
-    setError(null);
-
-    try {
+  // Fetch lead using React Query
+  const { data: lead, isLoading: loading, error, refetch } = useQuery({
+    queryKey: ['lead', leadId],
+    queryFn: async () => {
       const response = await fetch(`http://localhost:4000/api/leads/${leadId}`, {
         headers: {
           'x-organization-id': 'org_black_edition',
@@ -55,19 +47,13 @@ export default function LeadDetailPage() {
       }
 
       const data = await response.json();
-      setLead(data.data);
-    } catch (err: any) {
-      setError(err.message);
-      console.error('Error fetching lead:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
+      return data.data;
+    },
+  });
 
-  async function handleDelete() {
-    if (!confirm(`Are you sure you want to delete lead "${lead.name}"?`)) return;
-
-    try {
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
       const response = await fetch(`http://localhost:4000/api/leads/${leadId}`, {
         method: 'DELETE',
         headers: {
@@ -77,17 +63,22 @@ export default function LeadDetailPage() {
 
       if (!response.ok) throw new Error('Failed to delete lead');
 
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate leads list
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
       // Redirect to leads list
       router.push(`/${orgSlug}/leads`);
-    } catch (err: any) {
+    },
+    onError: (err: any) => {
       alert('Failed to delete lead: ' + err.message);
-    }
-  }
+    },
+  });
 
-  async function handleConvert() {
-    if (!confirm(`Convert "${lead.name}" to a customer? This will mark the lead as WON.`)) return;
-
-    try {
+  // Convert mutation
+  const convertMutation = useMutation({
+    mutationFn: async () => {
       const response = await fetch(`http://localhost:4000/api/leads/${leadId}/convert`, {
         method: 'POST',
         headers: {
@@ -101,12 +92,26 @@ export default function LeadDetailPage() {
         throw new Error(data.message || 'Failed to convert lead');
       }
 
-      // Refresh the lead data to show updated status
-      await fetchLead();
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate this lead's data to refresh
+      queryClient.invalidateQueries({ queryKey: ['lead', leadId] });
       alert('Lead converted to customer successfully!');
-    } catch (err: any) {
+    },
+    onError: (err: any) => {
       alert('Failed to convert lead: ' + err.message);
-    }
+    },
+  });
+
+  function handleDelete() {
+    if (!confirm(`Are you sure you want to delete lead "${lead?.name}"?`)) return;
+    deleteMutation.mutate();
+  }
+
+  function handleConvert() {
+    if (!confirm(`Convert "${lead?.name}" to a customer? This will mark the lead as WON.`)) return;
+    convertMutation.mutate();
   }
 
   if (loading) {
@@ -123,14 +128,14 @@ export default function LeadDetailPage() {
     );
   }
 
-  if (error || !lead) {
+  if (error || (!loading && !lead)) {
     return (
       <div className="p-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
           <h3 className="text-red-800 font-semibold">Error loading lead</h3>
-          <p className="text-red-600 text-sm mt-1">{error || 'Lead not found'}</p>
+          <p className="text-red-600 text-sm mt-1">{error?.message || 'Lead not found'}</p>
           <div className="mt-4 flex gap-2">
-            <Button onClick={fetchLead} variant="outline">
+            <Button onClick={() => refetch()} variant="outline">
               Try Again
             </Button>
             <Link href={`/${orgSlug}/leads`}>

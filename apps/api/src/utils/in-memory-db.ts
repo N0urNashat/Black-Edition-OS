@@ -53,10 +53,31 @@ interface Activity {
   createdAt: Date;
 }
 
+interface Customer {
+  id: string;
+  organizationId: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  website: string | null;
+  address: string | null;
+  city: string | null;
+  country: string | null;
+  notes: string | null;
+  customFields: any;
+  createdById: string;
+  assignedToId: string | null;
+  leadId: string | null; // Reference to original lead
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
   private activities: Map<string, Activity> = new Map();
+  private customers: Map<string, Customer> = new Map();
 
   constructor() {
     this.seedData();
@@ -335,6 +356,90 @@ class InMemoryDataStore {
 
   async deleteLead(id: string) {
     return this.leads.delete(id);
+  }
+
+  // Customer methods
+  async createCustomer(data: Partial<Customer>) {
+    const id = this.generateId();
+    const customer: Customer = {
+      id,
+      organizationId: data.organizationId!,
+      name: data.name!,
+      email: data.email || null,
+      phone: data.phone || null,
+      company: data.company || null,
+      website: data.website || null,
+      address: data.address || null,
+      city: data.city || null,
+      country: data.country || null,
+      notes: data.notes || null,
+      customFields: data.customFields || null,
+      createdById: data.createdById!,
+      assignedToId: data.assignedToId || null,
+      leadId: data.leadId || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.customers.set(id, customer);
+
+    return {
+      ...customer,
+      createdBy: this.users.get(customer.createdById),
+      assignedTo: customer.assignedToId ? this.users.get(customer.assignedToId) : null,
+    };
+  }
+
+  async findManyCustomers(filter: any = {}) {
+    let filtered = Array.from(this.customers.values());
+
+    // Filter by organizationId
+    if (filter.organizationId) {
+      filtered = filtered.filter((c) => c.organizationId === filter.organizationId);
+    }
+
+    // Filter by assignedToId
+    if (filter.assignedToId) {
+      filtered = filtered.filter((c) => c.assignedToId === filter.assignedToId);
+    }
+
+    // Search by name, company, or email
+    if (filter.OR) {
+      filtered = filtered.filter((c) => {
+        const searchFields = filter.OR.map((condition: any) => {
+          if (condition.name?.contains) {
+            return c.name?.toLowerCase().includes(condition.name.contains.toLowerCase());
+          }
+          if (condition.company?.contains) {
+            return c.company?.toLowerCase().includes(condition.company.contains.toLowerCase());
+          }
+          if (condition.email?.contains) {
+            return c.email?.toLowerCase().includes(condition.email.contains.toLowerCase());
+          }
+          return false;
+        });
+        return searchFields.some((match) => match);
+      });
+    }
+
+    return filtered.map((customer) => ({
+      ...customer,
+      createdBy: this.users.get(customer.createdById),
+      assignedTo: customer.assignedToId ? this.users.get(customer.assignedToId) : null,
+    }));
+  }
+
+  async findCustomerById(id: string, organizationId: string) {
+    const customer = this.customers.get(id);
+    if (!customer || customer.organizationId !== organizationId) {
+      return null;
+    }
+
+    return {
+      ...customer,
+      createdBy: this.users.get(customer.createdById),
+      assignedTo: customer.assignedToId ? this.users.get(customer.assignedToId) : null,
+    };
   }
 
   async createActivity(data: Partial<Activity>) {

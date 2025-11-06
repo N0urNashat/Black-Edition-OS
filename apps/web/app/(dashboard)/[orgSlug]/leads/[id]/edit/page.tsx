@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,9 +15,8 @@ import Link from 'next/link';
 export default function EditLeadPage() {
   const { id, orgSlug } = useParams();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [fetchingLead, setFetchingLead] = useState(true);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
+
   const [formData, setFormData] = useState({
     name: '',
     company: '',
@@ -31,14 +31,10 @@ export default function EditLeadPage() {
     notes: '',
   });
 
-  // Fetch the existing lead data
-  useEffect(() => {
-    fetchLead();
-  }, [id]);
-
-  async function fetchLead() {
-    try {
-      setFetchingLead(true);
+  // Fetch lead using React Query
+  const { data: lead, isLoading: fetchingLead } = useQuery({
+    queryKey: ['lead', id],
+    queryFn: async () => {
       const response = await fetch(`http://localhost:4000/api/leads/${id}`, {
         headers: {
           'x-organization-id': 'org_black_edition',
@@ -50,9 +46,13 @@ export default function EditLeadPage() {
       }
 
       const data = await response.json();
-      const lead = data.data;
+      return data.data;
+    },
+  });
 
-      // Pre-fill the form with existing data
+  // Pre-fill form when lead data is loaded
+  useEffect(() => {
+    if (lead) {
       setFormData({
         name: lead.name || '',
         company: lead.company || '',
@@ -66,20 +66,12 @@ export default function EditLeadPage() {
         requirements: lead.requirements || '',
         notes: lead.notes || '',
       });
-    } catch (err) {
-      console.error('Error fetching lead:', err);
-      setError('Failed to load lead data');
-    } finally {
-      setFetchingLead(false);
     }
-  }
+  }, [lead]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
       const response = await fetch(`http://localhost:4000/api/leads/${id}`, {
         method: 'PATCH',
         headers: {
@@ -88,8 +80,8 @@ export default function EditLeadPage() {
           'x-user-id': 'user_2',
         },
         body: JSON.stringify({
-          ...formData,
-          budget: formData.budget ? parseFloat(formData.budget) : null,
+          ...data,
+          budget: data.budget ? parseFloat(data.budget) : null,
         }),
       });
 
@@ -97,14 +89,20 @@ export default function EditLeadPage() {
         throw new Error('Failed to update lead');
       }
 
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ['lead', id] });
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
       // Redirect to detail page
       router.push(`/${orgSlug}/leads/${id}`);
-    } catch (err) {
-      console.error('Error updating lead:', err);
-      setError('Failed to update lead. Please try again.');
-    } finally {
-      setLoading(false);
-    }
+    },
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    updateMutation.mutate(formData);
   }
 
   function handleChange(field: string, value: any) {
@@ -318,16 +316,16 @@ export default function EditLeadPage() {
         </Card>
 
         {/* Error Message */}
-        {error && (
+        {updateMutation.error && (
           <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded">
-            {error}
+            {updateMutation.error?.message || 'Failed to update lead'}
           </div>
         )}
 
         {/* Actions */}
         <div className="flex gap-3">
-          <Button type="submit" disabled={loading} className="bg-[#93DA97] hover:bg-[#7bc47f] text-black">
-            {loading ? (
+          <Button type="submit" disabled={updateMutation.isPending} className="bg-[#93DA97] hover:bg-[#7bc47f] text-black">
+            {updateMutation.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Updating...
@@ -337,7 +335,7 @@ export default function EditLeadPage() {
             )}
           </Button>
           <Link href={`/${orgSlug}/leads/${id}`}>
-            <Button type="button" variant="outline" disabled={loading}>
+            <Button type="button" variant="outline" disabled={updateMutation.isPending}>
               Cancel
             </Button>
           </Link>

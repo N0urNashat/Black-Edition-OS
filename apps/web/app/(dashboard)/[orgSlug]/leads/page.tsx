@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Users,
   Plus,
@@ -67,32 +68,16 @@ const getScoreQuality = (score: number) => {
 export default function LeadsPage() {
   const params = useParams();
   const orgSlug = params.orgSlug as string;
-
-  const [leads, setLeads] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState({
-    total: 0,
-    thisMonth: 0,
-    averageScore: 0,
-    byStatus: {} as Record<string, number>,
-  });
+  const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('createdAt');
 
-  // Fetch leads and stats on mount
-  useEffect(() => {
-    fetchLeads();
-    fetchStats();
-  }, []);
-
-  async function fetchLeads() {
-    setLoading(true);
-    setError(null);
-
-    try {
+  // Fetch leads using React Query
+  const { data: leadsData, isLoading, error, refetch } = useQuery({
+    queryKey: ['leads'],
+    queryFn: async () => {
       const params = new URLSearchParams({
         page: '1',
         limit: '100',
@@ -107,17 +92,14 @@ export default function LeadsPage() {
       if (!response.ok) throw new Error('Failed to fetch leads');
 
       const data = await response.json();
-      setLeads(data.data || []);
-    } catch (err: any) {
-      setError(err.message);
-      console.error('Error fetching leads:', err);
-    } finally {
-      setLoading(false);
-    }
-  }
+      return data.data || [];
+    },
+  });
 
-  async function fetchStats() {
-    try {
+  // Fetch stats using React Query
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: async () => {
       const response = await fetch('http://localhost:4000/api/leads/stats', {
         headers: {
           'x-organization-id': 'org_black_edition',
@@ -127,16 +109,18 @@ export default function LeadsPage() {
       if (!response.ok) throw new Error('Failed to fetch stats');
 
       const data = await response.json();
-      setStats(data.data || {});
-    } catch (err) {
-      console.error('Error fetching stats:', err);
-    }
-  }
+      return data.data || {
+        total: 0,
+        thisMonth: 0,
+        averageScore: 0,
+        byStatus: {},
+      };
+    },
+  });
 
-  async function handleDelete(id: string, name: string) {
-    if (!confirm(`Are you sure you want to delete lead "${name}"?`)) return;
-
-    try {
+  // Delete mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
       const response = await fetch(`http://localhost:4000/api/leads/${id}`, {
         method: 'DELETE',
         headers: {
@@ -146,13 +130,25 @@ export default function LeadsPage() {
 
       if (!response.ok) throw new Error('Failed to delete lead');
 
-      // Refresh leads and stats
-      await fetchLeads();
-      await fetchStats();
-    } catch (err: any) {
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+      queryClient.invalidateQueries({ queryKey: ['stats'] });
+    },
+    onError: (err: any) => {
       alert('Failed to delete lead: ' + err.message);
-    }
+    },
+  });
+
+  function handleDelete(id: string, name: string) {
+    if (!confirm(`Are you sure you want to delete lead "${name}"?`)) return;
+    deleteMutation.mutate(id);
   }
+
+  const leads = leadsData || [];
+  const loading = isLoading;
 
   // Filter and sort leads
   const filteredLeads = leads
@@ -194,11 +190,11 @@ export default function LeadsPage() {
       <div className="p-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
           <h3 className="text-red-800 font-semibold text-lg">Error loading leads</h3>
-          <p className="text-red-600 text-sm mt-2">{error}</p>
+          <p className="text-red-600 text-sm mt-2">{error?.message || 'An error occurred'}</p>
           <p className="text-sm text-red-500 mt-1">
             Make sure the API server is running on port 4000
           </p>
-          <Button onClick={fetchLeads} className="mt-4" variant="outline">
+          <Button onClick={() => refetch()} className="mt-4" variant="outline">
             Try Again
           </Button>
         </div>

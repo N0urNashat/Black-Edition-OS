@@ -314,13 +314,28 @@ export async function convertLeadToCustomer(
       throw new AppError(400, 'Lead has already been converted to customer');
     }
 
-    // Update lead status to WON
+    // Create customer from lead data
+    const customer = await db.createCustomer({
+      organizationId,
+      name: lead.name,
+      email: lead.email,
+      phone: lead.phone,
+      company: lead.company,
+      website: lead.website,
+      notes: lead.notes,
+      createdById: userId,
+      assignedToId: lead.assignedToId,
+      leadId: id,
+    });
+
+    // Update lead status to WON and link to customer
     const updatedLead = await db.updateLead(id, {
       status: 'WON',
       convertedAt: new Date(),
+      customerId: customer.id,
     });
 
-    // Create activity log
+    // Create activity log for lead
     await db.createActivity({
       organizationId,
       userId,
@@ -330,12 +345,25 @@ export async function convertLeadToCustomer(
       description: `Converted lead to customer: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
     });
 
-    logger.info(`Lead converted to customer: ${id} by user ${userId}`);
+    // Create activity log for customer
+    await db.createActivity({
+      organizationId,
+      userId,
+      action: 'CREATED',
+      entityType: 'customer',
+      entityId: customer.id,
+      description: `Customer created from lead: ${customer.name}${customer.company ? ` from ${customer.company}` : ''}`,
+    });
+
+    logger.info(`Lead converted to customer: ${id} -> ${customer.id} by user ${userId}`);
 
     res.json({
       status: 'success',
       message: 'Lead converted to customer successfully',
-      data: updatedLead,
+      data: {
+        lead: updatedLead,
+        customer,
+      },
     });
   } catch (error) {
     next(error);
