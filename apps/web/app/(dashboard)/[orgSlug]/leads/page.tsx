@@ -1,22 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   Users,
   Plus,
   Search,
-  Filter,
-  ArrowUpDown,
   MoreHorizontal,
   Eye,
   Edit,
   Trash2,
   UserCheck,
   TrendingUp,
-  TrendingDown,
-  Minus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -46,60 +42,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-// Mock data - will be replaced with API calls
-const mockLeads = [
-  {
-    id: '1',
-    name: 'Hassan Abdel Aziz',
-    company: 'Egypt Tech Solutions',
-    email: 'hassan@egypttech.com',
-    status: 'NEW',
-    score: 45,
-    assignedTo: { name: 'Sara Ibrahim', avatar: null },
-    createdAt: '2024-11-03T10:30:00Z',
-  },
-  {
-    id: '2',
-    name: 'Mariam Mostafa',
-    company: 'Cairo Digital Marketing',
-    email: 'mariam@cairodigital.com',
-    status: 'CONTACTED',
-    score: 65,
-    assignedTo: { name: 'Mohamed Hassan', avatar: null },
-    createdAt: '2024-10-28T14:20:00Z',
-  },
-  {
-    id: '3',
-    name: 'Youssef Kamel',
-    company: 'Giza Industries Ltd',
-    email: 'youssef@gizaindustries.com',
-    status: 'QUALIFIED',
-    score: 80,
-    assignedTo: { name: 'Sara Ibrahim', avatar: null },
-    createdAt: '2024-10-15T09:15:00Z',
-  },
-  {
-    id: '4',
-    name: 'Laila Fathy',
-    company: 'Alexandria Retail',
-    email: 'laila@alexretail.com',
-    status: 'PROPOSAL',
-    score: 85,
-    assignedTo: { name: 'Mohamed Hassan', avatar: null },
-    createdAt: '2024-10-10T16:45:00Z',
-  },
-  {
-    id: '5',
-    name: 'Omar Sherif',
-    company: 'Delta Foods',
-    email: 'omar@deltafoods.eg',
-    status: 'NEGOTIATION',
-    score: 90,
-    assignedTo: { name: 'Sara Ibrahim', avatar: null },
-    createdAt: '2024-10-05T11:00:00Z',
-  },
-];
-
 const statusColors: Record<string, string> = {
   NEW: 'bg-blue-100 text-blue-800',
   CONTACTED: 'bg-purple-100 text-purple-800',
@@ -126,17 +68,99 @@ export default function LeadsPage() {
   const params = useParams();
   const orgSlug = params.orgSlug as string;
 
+  const [leads, setLeads] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState({
+    total: 0,
+    thisMonth: 0,
+    averageScore: 0,
+    byStatus: {} as Record<string, number>,
+  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('createdAt');
 
+  // Fetch leads and stats on mount
+  useEffect(() => {
+    fetchLeads();
+    fetchStats();
+  }, []);
+
+  async function fetchLeads() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        page: '1',
+        limit: '100',
+      });
+
+      const response = await fetch(`http://localhost:4000/api/leads?${params}`, {
+        headers: {
+          'x-organization-id': 'org_black_edition',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch leads');
+
+      const data = await response.json();
+      setLeads(data.data || []);
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error fetching leads:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchStats() {
+    try {
+      const response = await fetch('http://localhost:4000/api/leads/stats', {
+        headers: {
+          'x-organization-id': 'org_black_edition',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch stats');
+
+      const data = await response.json();
+      setStats(data.data || {});
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+    }
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Are you sure you want to delete lead "${name}"?`)) return;
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/leads/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-organization-id': 'org_black_edition',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to delete lead');
+
+      // Refresh leads and stats
+      await fetchLeads();
+      await fetchStats();
+    } catch (err: any) {
+      alert('Failed to delete lead: ' + err.message);
+    }
+  }
+
   // Filter and sort leads
-  const filteredLeads = mockLeads
+  const filteredLeads = leads
     .filter((lead) => {
       const matchesSearch =
         lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        lead.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        lead.email.toLowerCase().includes(searchQuery.toLowerCase());
+        (lead.company && lead.company.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (lead.email && lead.email.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesStatus = statusFilter === 'all' || lead.status === statusFilter;
       return matchesSearch && matchesStatus;
     })
@@ -146,13 +170,41 @@ export default function LeadsPage() {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
-  // Calculate stats
-  const stats = {
-    total: mockLeads.length,
-    new: mockLeads.filter((l) => l.status === 'NEW').length,
-    qualified: mockLeads.filter((l) => l.status === 'QUALIFIED').length,
-    avgScore: Math.round(mockLeads.reduce((sum, l) => sum + l.score, 0) / mockLeads.length),
-  };
+  const qualifiedCount = stats.byStatus.QUALIFIED || 0;
+
+  if (loading && leads.length === 0) {
+    return (
+      <div className="p-8">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="h-24 bg-gray-200 rounded"></div>
+            <div className="h-24 bg-gray-200 rounded"></div>
+            <div className="h-24 bg-gray-200 rounded"></div>
+            <div className="h-24 bg-gray-200 rounded"></div>
+          </div>
+          <div className="h-96 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-red-800 font-semibold text-lg">Error loading leads</h3>
+          <p className="text-red-600 text-sm mt-2">{error}</p>
+          <p className="text-sm text-red-500 mt-1">
+            Make sure the API server is running on port 4000
+          </p>
+          <Button onClick={fetchLeads} className="mt-4" variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -186,11 +238,11 @@ export default function LeadsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">New Leads</CardTitle>
+            <CardTitle className="text-sm font-medium">This Month</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.new}</div>
+            <div className="text-2xl font-bold">{stats.thisMonth}</div>
           </CardContent>
         </Card>
 
@@ -200,7 +252,7 @@ export default function LeadsPage() {
             <UserCheck className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.qualified}</div>
+            <div className="text-2xl font-bold">{qualifiedCount}</div>
           </CardContent>
         </Card>
 
@@ -210,7 +262,7 @@ export default function LeadsPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.avgScore}</div>
+            <div className="text-2xl font-bold">{stats.averageScore}</div>
           </CardContent>
         </Card>
       </div>
@@ -299,10 +351,10 @@ export default function LeadsPage() {
                       <TableCell className="font-medium">
                         <div>
                           <div>{lead.name}</div>
-                          <div className="text-sm text-muted-foreground">{lead.email}</div>
+                          <div className="text-sm text-muted-foreground">{lead.email || '-'}</div>
                         </div>
                       </TableCell>
-                      <TableCell>{lead.company}</TableCell>
+                      <TableCell>{lead.company || '-'}</TableCell>
                       <TableCell>
                         <Badge
                           className={`${statusColors[lead.status]} border-none`}
@@ -321,7 +373,7 @@ export default function LeadsPage() {
                           </Badge>
                         </div>
                       </TableCell>
-                      <TableCell>{lead.assignedTo.name}</TableCell>
+                      <TableCell>{lead.assignedTo?.name || '-'}</TableCell>
                       <TableCell>
                         {new Date(lead.createdAt).toLocaleDateString('en-US', {
                           month: 'short',
@@ -356,7 +408,10 @@ export default function LeadsPage() {
                               Convert to Customer
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-red-600">
+                            <DropdownMenuItem
+                              className="text-red-600"
+                              onClick={() => handleDelete(lead.id, lead.name)}
+                            >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete
                             </DropdownMenuItem>
@@ -370,20 +425,12 @@ export default function LeadsPage() {
             </Table>
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between mt-4">
-            <p className="text-sm text-muted-foreground">
+          {/* Pagination Info */}
+          {filteredLeads.length > 0 && (
+            <div className="mt-4 text-sm text-muted-foreground">
               Showing {filteredLeads.length} of {stats.total} leads
-            </p>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" disabled>
-                Next
-              </Button>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
