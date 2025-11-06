@@ -73,6 +73,7 @@ model Organization {
   reports       Report[]
   activities    Activity[]
   files         File[]
+  meetings      Meeting[]
 
   @@index([slug])
   @@map("organizations")
@@ -148,6 +149,7 @@ model Customer {
   activities    Activity[]
   files         File[]         @relation("CustomerFiles")
   leadsConverted Lead[]
+  meetings      Meeting[]
 
   @@index([organizationId])
   @@index([status])
@@ -192,6 +194,7 @@ model Project {
   invoices      Invoice[]
   files         File[]          @relation("ProjectFiles")
   activities    Activity[]
+  meetings      Meeting[]
 
   @@index([organizationId])
   @@index([customerId])
@@ -328,6 +331,34 @@ model TimeEntry {
   @@index([taskId])
   @@index([date])
   @@map("time_entries")
+}
+
+// ====================
+// MEETINGS
+// ====================
+
+model Meeting {
+  id             String    @id @default(cuid())
+  organizationId String
+  customerId     String
+  projectId      String?
+  title          String
+  description    String?
+  startTime      DateTime
+  endTime        DateTime
+  meetingLink    String?   // e.g., Google Meet link
+  status         String    @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED
+  requestedById  String?   // User or Client ID
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  project      Project?     @relation(fields: [projectId], references: [id])
+
+  @@index([organizationId])
+  @@index([customerId])
+  @@index([projectId])
+  @@map("meetings")
 }
 
 // ====================
