@@ -6,6 +6,7 @@ import {
   updateLead,
   deleteLead,
   getLeadStats,
+  convertLeadToCustomer,
 } from '../controllers/leads.controller';
 import { validate } from '../middleware/validate';
 import {
@@ -30,6 +31,13 @@ router.get('/stats', getLeadStats);
  * @access  Private
  */
 router.get('/', validate(getLeadsSchema), getLeads);
+
+/**
+ * @route   POST /api/leads/:id/convert
+ * @desc    Convert lead to customer
+ * @access  Private
+ */
+router.post('/:id/convert', validate(leadIdSchema), convertLeadToCustomer);
 
 /**
  * @route   GET /api/leads/:id

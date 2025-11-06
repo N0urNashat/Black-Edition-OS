@@ -55,7 +55,7 @@ export const getLeadsSchema = z.object({
 // Lead ID param schema
 export const leadIdSchema = z.object({
   params: z.object({
-    id: z.string().cuid('Invalid lead ID'),
+    id: z.string().min(1, 'Invalid lead ID'),
   }),
 });
 

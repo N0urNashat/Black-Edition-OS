@@ -84,6 +84,31 @@ export default function LeadDetailPage() {
     }
   }
 
+  async function handleConvert() {
+    if (!confirm(`Convert "${lead.name}" to a customer? This will mark the lead as WON.`)) return;
+
+    try {
+      const response = await fetch(`http://localhost:4000/api/leads/${leadId}/convert`, {
+        method: 'POST',
+        headers: {
+          'x-organization-id': 'org_black_edition',
+          'x-user-id': 'user_2',
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to convert lead');
+      }
+
+      // Refresh the lead data to show updated status
+      await fetchLead();
+      alert('Lead converted to customer successfully!');
+    } catch (err: any) {
+      alert('Failed to convert lead: ' + err.message);
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -390,9 +415,14 @@ export default function LeadDetailPage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button className="w-full" variant="default">
+              <Button
+                className="w-full"
+                variant="default"
+                onClick={handleConvert}
+                disabled={lead?.status === 'WON' || lead?.status === 'LOST'}
+              >
                 <UserCheck className="mr-2 h-4 w-4" />
-                Convert to Customer
+                {lead?.status === 'WON' ? 'Already Converted' : 'Convert to Customer'}
               </Button>
               <Button className="w-full" variant="outline">
                 <Mail className="mr-2 h-4 w-4" />

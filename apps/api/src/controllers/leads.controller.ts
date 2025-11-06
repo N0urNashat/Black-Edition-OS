@@ -287,3 +287,57 @@ export async function getLeadStats(
     next(error);
   }
 }
+
+/**
+ * Convert lead to customer
+ * POST /api/leads/:id/convert
+ */
+export async function convertLeadToCustomer(
+  req: Request<{ id: string }>,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const { id } = req.params;
+    const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
+    const userId = req.headers['x-user-id'] as string || 'user_2';
+
+    // Check if lead exists
+    const lead = await db.findLeadById(id, organizationId);
+
+    if (!lead) {
+      throw new AppError(404, 'Lead not found');
+    }
+
+    // Check if already converted
+    if (lead.status === 'WON' || lead.customerId) {
+      throw new AppError(400, 'Lead has already been converted to customer');
+    }
+
+    // Update lead status to WON
+    const updatedLead = await db.updateLead(id, {
+      status: 'WON',
+      convertedAt: new Date(),
+    });
+
+    // Create activity log
+    await db.createActivity({
+      organizationId,
+      userId,
+      action: 'CONVERTED',
+      entityType: 'lead',
+      entityId: id,
+      description: `Converted lead to customer: ${lead.name}${lead.company ? ` from ${lead.company}` : ''}`,
+    });
+
+    logger.info(`Lead converted to customer: ${id} by user ${userId}`);
+
+    res.json({
+      status: 'success',
+      message: 'Lead converted to customer successfully',
+      data: updatedLead,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
