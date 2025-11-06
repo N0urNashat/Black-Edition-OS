@@ -182,6 +182,21 @@ interface InvoiceLineItem {
   position: number;
 }
 
+interface Meeting {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  projectId: string | null;
+  title: string;
+  description: string | null;
+  startTime: Date;
+  endTime: Date;
+  meetingLink: string | null;
+  status: string; // UPCOMING, COMPLETED, CANCELLED
+  requestedById: string | null;
+  createdAt: Date;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
@@ -194,6 +209,7 @@ class InMemoryDataStore {
   private invoices: Map<string, Invoice> = new Map();
   private invoiceLineItems: Map<string, InvoiceLineItem> = new Map();
   private organizationSettings: Map<string, any> = new Map();
+  private meetings: Map<string, Meeting> = new Map();
 
   constructor() {
     this.seedData();
@@ -1016,6 +1032,66 @@ class InMemoryDataStore {
       createdBy: this.users.get(invoice.createdById),
       lineItems,
     };
+  }
+
+  // ==================== MEETING METHODS ====================
+
+  async createMeeting(data: Partial<Meeting>) {
+    const id = this.generateId();
+    const meeting: Meeting = {
+      id,
+      organizationId: data.organizationId!,
+      customerId: data.customerId!,
+      projectId: data.projectId || null,
+      title: data.title!,
+      description: data.description || null,
+      startTime: data.startTime!,
+      endTime: data.endTime!,
+      meetingLink: data.meetingLink || null,
+      status: data.status || 'UPCOMING',
+      requestedById: data.requestedById || null,
+      createdAt: new Date(),
+    };
+
+    this.meetings.set(id, meeting);
+    return {
+      ...meeting,
+      customer: this.customers.get(meeting.customerId),
+      project: meeting.projectId ? this.projects.get(meeting.projectId) : null,
+    };
+  }
+
+  async findManyMeetings(filter: any = {}) {
+    let filtered = Array.from(this.meetings.values());
+
+    // Filter by organizationId
+    if (filter.organizationId) {
+      filtered = filtered.filter((m) => m.organizationId === filter.organizationId);
+    }
+
+    // Filter by customerId
+    if (filter.customerId) {
+      filtered = filtered.filter((m) => m.customerId === filter.customerId);
+    }
+
+    // Filter by projectId
+    if (filter.projectId) {
+      filtered = filtered.filter((m) => m.projectId === filter.projectId);
+    }
+
+    // Filter by status
+    if (filter.status) {
+      filtered = filtered.filter((m) => m.status === filter.status);
+    }
+
+    // Sort by start time ascending (earliest first)
+    filtered.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+    return filtered.map((meeting) => ({
+      ...meeting,
+      customer: this.customers.get(meeting.customerId),
+      project: meeting.projectId ? this.projects.get(meeting.projectId) : null,
+    }));
   }
 
   async createActivity(data: Partial<Activity>) {

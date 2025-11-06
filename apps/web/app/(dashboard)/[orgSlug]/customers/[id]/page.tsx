@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Mail,
@@ -12,16 +12,19 @@ import {
   MapPin,
   User,
   Calendar,
+  UserPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useState } from 'react';
 
 export default function CustomerDetailPage() {
   const params = useParams();
   const customerId = params.id as string;
   const orgSlug = params.orgSlug as string;
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
 
   // Fetch customer using React Query
   const { data: customer, isLoading: loading, error, refetch } = useQuery({
@@ -42,6 +45,40 @@ export default function CustomerDetailPage() {
 
       const data = await response.json();
       return data.data;
+    },
+  });
+
+  // Invite client mutation
+  const inviteMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('http://localhost:4000/api/activities', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': 'org_black_edition',
+          'x-user-id': 'user_1',
+        },
+        body: JSON.stringify({
+          action: 'CREATED',
+          entityType: 'customer',
+          entityId: customerId,
+          description: `Client Invite Sent to ${customer?.email || customer?.name}`,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to send invite');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      setInviteMessage('Client invite sent successfully!');
+      setTimeout(() => setInviteMessage(null), 3000);
+    },
+    onError: () => {
+      setInviteMessage('Failed to send invite. Please try again.');
+      setTimeout(() => setInviteMessage(null), 3000);
     },
   });
 
@@ -96,7 +133,27 @@ export default function CustomerDetailPage() {
             )}
           </div>
         </div>
+        <Button
+          onClick={() => inviteMutation.mutate()}
+          disabled={inviteMutation.isPending || !customer.email}
+        >
+          <UserPlus className="h-4 w-4 mr-2" />
+          {inviteMutation.isPending ? 'Sending...' : 'Invite Client'}
+        </Button>
       </div>
+
+      {/* Success/Error Message */}
+      {inviteMessage && (
+        <div
+          className={`p-4 rounded-lg text-sm ${
+            inviteMessage.includes('success')
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}
+        >
+          {inviteMessage}
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid gap-6 md:grid-cols-3">

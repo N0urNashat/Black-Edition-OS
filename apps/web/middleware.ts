@@ -7,7 +7,6 @@ export default authMiddleware({
     '/api/webhooks/clerk',
     '/api/health',
     '/sign-in(.*)',
-    '/sign-up(.*)',
   ],
   ignoredRoutes: ['/api/webhooks/clerk'],
 });
