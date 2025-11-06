@@ -1,4 +1,13 @@
-import { Lead } from '@prisma/client';
+// Type definition for Lead (temporary until Prisma client is generated)
+type Lead = {
+  budget?: number | string | null;
+  decisionMaker?: boolean;
+  timeline?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  requirements?: string | null;
+};
 
 /**
  * Calculate lead score based on various factors (0-100)

@@ -79,7 +79,7 @@ export async function createTimeEntry(
     if (data.date) timeEntryData.date = new Date(data.date);
 
     // Create time entry and update task/project in a transaction
-    const timeEntry = await prisma.$transaction(async (tx) => {
+    const timeEntry = await prisma.$transaction(async (tx: any) => {
       // Create time entry
       const entry = await tx.timeEntry.create({
         data: timeEntryData,
@@ -154,7 +154,7 @@ export async function deleteTimeEntry(
     }
 
     // Delete time entry and update task/project in a transaction
-    const timeEntry = await prisma.$transaction(async (tx) => {
+    const timeEntry = await prisma.$transaction(async (tx: any) => {
       // Delete time entry
       const entry = await tx.timeEntry.delete({
         where: { id },

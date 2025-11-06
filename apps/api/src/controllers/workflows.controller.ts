@@ -40,7 +40,7 @@ export async function getWorkflowById(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
@@ -76,7 +76,7 @@ export async function createWorkflow(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const data = req.body;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
@@ -139,7 +139,7 @@ export async function updateWorkflow(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const { id } = req.params;
     const data = req.body;

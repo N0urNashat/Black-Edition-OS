@@ -46,7 +46,7 @@ const limiter = rateLimit({
 app.use('/api', limiter);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.status(200).json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -71,7 +71,7 @@ app.use('/api', workflowsRoutes);
 app.use('/api/payments', paymentRoutes);
 
 // API root
-app.get('/api', (req, res) => {
+app.get('/api', (_req, res) => {
   res.json({
     message: 'BLACK EDITION OS API',
     version: '1.0.0',
@@ -96,7 +96,7 @@ app.get('/api', (req, res) => {
 });
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use('*', (_req, res) => {
   res.status(404).json({
     status: 'error',
     message: 'Route not found',

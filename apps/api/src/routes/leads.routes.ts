@@ -30,7 +30,7 @@ router.get('/stats', getLeadStats);
  * @desc    Get all leads with filters and pagination
  * @access  Private
  */
-router.get('/', validate(getLeadsSchema), getLeads);
+router.get('/', validate(getLeadsSchema) as any, getLeads);
 
 /**
  * @route   POST /api/leads/:id/convert
