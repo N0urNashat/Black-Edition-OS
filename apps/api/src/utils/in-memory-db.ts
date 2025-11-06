@@ -95,12 +95,45 @@ interface Project {
   updatedAt: Date;
 }
 
+interface Milestone {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string | null;
+  dueDate: Date;
+  completed: boolean;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface Task {
+  id: string;
+  projectId: string;
+  parentTaskId: string | null;
+  title: string;
+  description: string | null;
+  status: string; // TODO, IN_PROGRESS, IN_REVIEW, BLOCKED, DONE, CANCELLED
+  priority: string; // LOW, MEDIUM, HIGH, URGENT
+  assignedToId: string | null;
+  dueDate: Date | null;
+  startDate: Date | null;
+  estimatedTime: number | null; // hours
+  actualTime: number;
+  tags: string[];
+  position: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
   private activities: Map<string, Activity> = new Map();
   private customers: Map<string, Customer> = new Map();
   private projects: Map<string, Project> = new Map();
+  private milestones: Map<string, Milestone> = new Map();
+  private tasks: Map<string, Task> = new Map();
 
   constructor() {
     this.seedData();
@@ -550,6 +583,131 @@ class InMemoryDataStore {
       ...project,
       createdBy: this.users.get(project.createdById),
       customer: this.customers.get(project.customerId),
+    };
+  }
+
+  // ==================== MILESTONE METHODS ====================
+
+  async createMilestone(data: Partial<Milestone>) {
+    const id = this.generateId();
+    const milestone: Milestone = {
+      id,
+      projectId: data.projectId!,
+      name: data.name!,
+      description: data.description || null,
+      dueDate: data.dueDate!,
+      completed: data.completed || false,
+      completedAt: data.completedAt || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.milestones.set(id, milestone);
+    return milestone;
+  }
+
+  async findManyMilestones(filter: any = {}) {
+    let filtered = Array.from(this.milestones.values());
+
+    // Filter by projectId
+    if (filter.projectId) {
+      filtered = filtered.filter((m) => m.projectId === filter.projectId);
+    }
+
+    // Sort by dueDate ascending
+    filtered.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+    return filtered;
+  }
+
+  // ==================== TASK METHODS ====================
+
+  async createTask(data: Partial<Task>) {
+    const id = this.generateId();
+    const task: Task = {
+      id,
+      projectId: data.projectId!,
+      parentTaskId: data.parentTaskId || null,
+      title: data.title!,
+      description: data.description || null,
+      status: data.status || 'TODO',
+      priority: data.priority || 'MEDIUM',
+      assignedToId: data.assignedToId || null,
+      dueDate: data.dueDate || null,
+      startDate: data.startDate || null,
+      estimatedTime: data.estimatedTime || null,
+      actualTime: data.actualTime || 0,
+      tags: data.tags || [],
+      position: data.position || 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.tasks.set(id, task);
+    return {
+      ...task,
+      assignedTo: task.assignedToId ? this.users.get(task.assignedToId) : null,
+    };
+  }
+
+  async findManyTasks(filter: any = {}) {
+    let filtered = Array.from(this.tasks.values());
+
+    // Filter by projectId
+    if (filter.projectId) {
+      filtered = filtered.filter((t) => t.projectId === filter.projectId);
+    }
+
+    // Filter by status
+    if (filter.status) {
+      filtered = filtered.filter((t) => t.status === filter.status);
+    }
+
+    // Filter by assignedToId
+    if (filter.assignedToId) {
+      filtered = filtered.filter((t) => t.assignedToId === filter.assignedToId);
+    }
+
+    // Sort by position
+    filtered.sort((a, b) => a.position - b.position);
+
+    return filtered.map((task) => ({
+      ...task,
+      assignedTo: task.assignedToId ? this.users.get(task.assignedToId) : null,
+    }));
+  }
+
+  async findTaskById(id: string) {
+    const task = this.tasks.get(id);
+    if (!task) {
+      return null;
+    }
+
+    return {
+      ...task,
+      assignedTo: task.assignedToId ? this.users.get(task.assignedToId) : null,
+    };
+  }
+
+  async updateTask(id: string, data: Partial<Task>) {
+    const task = this.tasks.get(id);
+    if (!task) {
+      return null;
+    }
+
+    const updatedTask: Task = {
+      ...task,
+      ...data,
+      id: task.id, // Prevent ID change
+      projectId: task.projectId, // Prevent projectId change
+      createdAt: task.createdAt, // Prevent createdAt change
+      updatedAt: new Date(),
+    };
+
+    this.tasks.set(id, updatedTask);
+    return {
+      ...updatedTask,
+      assignedTo: updatedTask.assignedToId ? this.users.get(updatedTask.assignedToId) : null,
     };
   }
 

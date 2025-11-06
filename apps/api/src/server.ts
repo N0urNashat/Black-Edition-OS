@@ -9,6 +9,8 @@ import { errorHandler } from './middleware/error-handler';
 import leadsRoutes from './routes/leads.routes';
 import customersRoutes from './routes/customers.routes';
 import projectsRoutes from './routes/projects.routes';
+import milestonesRoutes from './routes/milestones.routes';
+import tasksRoutes from './routes/tasks.routes';
 
 const app: Application = express();
 
@@ -47,6 +49,8 @@ app.get('/health', (req, res) => {
 app.use('/api/leads', leadsRoutes);
 app.use('/api/customers', customersRoutes);
 app.use('/api/projects', projectsRoutes);
+app.use('/api', milestonesRoutes);
+app.use('/api', tasksRoutes);
 
 // API root
 app.get('/api', (req, res) => {
@@ -57,6 +61,8 @@ app.get('/api', (req, res) => {
       leads: '/api/leads',
       customers: '/api/customers',
       projects: '/api/projects',
+      milestones: '/api/projects/:projectId/milestones',
+      tasks: '/api/tasks',
       health: '/health',
     },
   });
