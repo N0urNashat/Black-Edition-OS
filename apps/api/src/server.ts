@@ -11,6 +11,7 @@ import customersRoutes from './routes/customers.routes';
 import projectsRoutes from './routes/projects.routes';
 import milestonesRoutes from './routes/milestones.routes';
 import tasksRoutes from './routes/tasks.routes';
+import timeTrackingRoutes from './routes/time-tracking.routes';
 
 const app: Application = express();
 
@@ -51,6 +52,7 @@ app.use('/api/customers', customersRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api', milestonesRoutes);
 app.use('/api', tasksRoutes);
+app.use('/api', timeTrackingRoutes);
 
 // API root
 app.get('/api', (req, res) => {
@@ -63,6 +65,7 @@ app.get('/api', (req, res) => {
       projects: '/api/projects',
       milestones: '/api/projects/:projectId/milestones',
       tasks: '/api/tasks',
+      timeTracking: '/api/projects/:projectId/time-entries',
       health: '/health',
     },
   });

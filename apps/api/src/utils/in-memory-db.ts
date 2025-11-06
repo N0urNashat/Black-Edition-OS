@@ -126,6 +126,23 @@ interface Task {
   updatedAt: Date;
 }
 
+interface TimeEntry {
+  id: string;
+  userId: string;
+  projectId: string;
+  taskId: string | null;
+  description: string | null;
+  duration: number; // hours
+  date: Date;
+  startTime: Date | null;
+  endTime: Date | null;
+  billable: boolean;
+  approved: boolean;
+  approvedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 class InMemoryDataStore {
   private users: Map<string, User> = new Map();
   private leads: Map<string, Lead> = new Map();
@@ -134,6 +151,7 @@ class InMemoryDataStore {
   private projects: Map<string, Project> = new Map();
   private milestones: Map<string, Milestone> = new Map();
   private tasks: Map<string, Task> = new Map();
+  private timeEntries: Map<string, TimeEntry> = new Map();
 
   constructor() {
     this.seedData();
@@ -709,6 +727,110 @@ class InMemoryDataStore {
       ...updatedTask,
       assignedTo: updatedTask.assignedToId ? this.users.get(updatedTask.assignedToId) : null,
     };
+  }
+
+  // ==================== TIME ENTRY METHODS ====================
+
+  async createTimeEntry(data: Partial<TimeEntry>) {
+    const id = this.generateId();
+    const timeEntry: TimeEntry = {
+      id,
+      userId: data.userId!,
+      projectId: data.projectId!,
+      taskId: data.taskId || null,
+      description: data.description || null,
+      duration: data.duration!,
+      date: data.date || new Date(),
+      startTime: data.startTime || null,
+      endTime: data.endTime || null,
+      billable: data.billable !== undefined ? data.billable : true,
+      approved: data.approved || false,
+      approvedAt: data.approvedAt || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    this.timeEntries.set(id, timeEntry);
+
+    // CRITICAL: Update Task.actualTime if taskId is provided
+    if (timeEntry.taskId) {
+      const task = this.tasks.get(timeEntry.taskId);
+      if (task) {
+        task.actualTime += timeEntry.duration;
+        task.updatedAt = new Date();
+        this.tasks.set(task.id, task);
+      }
+    }
+
+    // CRITICAL: Update Project.actualHours
+    const project = this.projects.get(timeEntry.projectId);
+    if (project) {
+      project.actualHours += timeEntry.duration;
+      project.updatedAt = new Date();
+      this.projects.set(project.id, project);
+    }
+
+    return {
+      ...timeEntry,
+      user: this.users.get(timeEntry.userId),
+      task: timeEntry.taskId ? this.tasks.get(timeEntry.taskId) : null,
+    };
+  }
+
+  async findManyTimeEntries(filter: any = {}) {
+    let filtered = Array.from(this.timeEntries.values());
+
+    // Filter by projectId
+    if (filter.projectId) {
+      filtered = filtered.filter((te) => te.projectId === filter.projectId);
+    }
+
+    // Filter by taskId
+    if (filter.taskId) {
+      filtered = filtered.filter((te) => te.taskId === filter.taskId);
+    }
+
+    // Filter by userId
+    if (filter.userId) {
+      filtered = filtered.filter((te) => te.userId === filter.userId);
+    }
+
+    // Sort by date descending (newest first)
+    filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    return filtered.map((timeEntry) => ({
+      ...timeEntry,
+      user: this.users.get(timeEntry.userId),
+      task: timeEntry.taskId ? this.tasks.get(timeEntry.taskId) : null,
+    }));
+  }
+
+  async deleteTimeEntry(id: string) {
+    const timeEntry = this.timeEntries.get(id);
+    if (!timeEntry) {
+      return null;
+    }
+
+    // CRITICAL: Decrement Task.actualTime if taskId exists
+    if (timeEntry.taskId) {
+      const task = this.tasks.get(timeEntry.taskId);
+      if (task) {
+        task.actualTime = Math.max(0, task.actualTime - timeEntry.duration);
+        task.updatedAt = new Date();
+        this.tasks.set(task.id, task);
+      }
+    }
+
+    // CRITICAL: Decrement Project.actualHours
+    const project = this.projects.get(timeEntry.projectId);
+    if (project) {
+      project.actualHours = Math.max(0, project.actualHours - timeEntry.duration);
+      project.updatedAt = new Date();
+      this.projects.set(project.id, project);
+    }
+
+    this.timeEntries.delete(id);
+    return timeEntry;
   }
 
   async createActivity(data: Partial<Activity>) {

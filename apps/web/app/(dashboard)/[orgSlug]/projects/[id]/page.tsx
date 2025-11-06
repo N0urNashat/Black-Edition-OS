@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   Circle,
   Target,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -86,6 +87,15 @@ export default function ProjectDetailPage() {
     dueDate: '',
   });
   const [taskFilter, setTaskFilter] = useState('all');
+
+  const [mainTab, setMainTab] = useState('tasks');
+  const [showTimeForm, setShowTimeForm] = useState(false);
+  const [timeForm, setTimeForm] = useState({
+    taskId: '',
+    duration: '',
+    date: new Date().toISOString().split('T')[0],
+    description: '',
+  });
 
   // Fetch project using React Query
   const { data: project, isLoading: loading, error, refetch } = useQuery({
@@ -235,6 +245,93 @@ export default function ProjectDetailPage() {
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
     createTaskMutation.mutate(taskForm);
+  };
+
+  // Fetch time entries
+  const { data: timeEntries = [], isLoading: loadingTimeEntries } = useQuery({
+    queryKey: ['time-entries', projectId],
+    queryFn: async () => {
+      const response = await fetch(`http://localhost:4000/api/projects/${projectId}/time-entries`, {
+        headers: {
+          'x-organization-id': 'org_black_edition',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch time entries');
+
+      const data = await response.json();
+      return data.data || [];
+    },
+    enabled: !!projectId,
+  });
+
+  // Create time entry mutation
+  const createTimeEntryMutation = useMutation({
+    mutationFn: async (data: typeof timeForm) => {
+      const response = await fetch(`http://localhost:4000/api/tasks/${data.taskId}/time-entries`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': 'org_black_edition',
+        },
+        body: JSON.stringify({
+          duration: parseFloat(data.duration),
+          date: data.date,
+          description: data.description,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create time entry');
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['time-entries', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+      setShowTimeForm(false);
+      setTimeForm({
+        taskId: '',
+        duration: '',
+        date: new Date().toISOString().split('T')[0],
+        description: '',
+      });
+    },
+  });
+
+  // Delete time entry mutation
+  const deleteTimeEntryMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`http://localhost:4000/api/time-entries/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-organization-id': 'org_black_edition',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to delete time entry');
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['time-entries', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+    },
+  });
+
+  const handleCreateTimeEntry = (e: React.FormEvent) => {
+    e.preventDefault();
+    createTimeEntryMutation.mutate(timeForm);
+  };
+
+  const handleDeleteTimeEntry = (id: string) => {
+    if (confirm('Are you sure you want to delete this time entry?')) {
+      deleteTimeEntryMutation.mutate(id);
+    }
   };
 
   // Filter tasks based on tab
@@ -487,22 +584,33 @@ export default function ProjectDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Tasks */}
+          {/* Tasks & Time Tracking */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle>Tasks</CardTitle>
-                <Button
-                  size="sm"
-                  onClick={() => setShowTaskForm(!showTaskForm)}
-                  variant={showTaskForm ? 'outline' : 'default'}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  {showTaskForm ? 'Cancel' : 'New Task'}
-                </Button>
-              </div>
+              <CardTitle>Tasks & Time Tracking</CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Main Tabs: Tasks and Time Log */}
+              <Tabs value={mainTab} onValueChange={setMainTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="tasks">Tasks</TabsTrigger>
+                  <TabsTrigger value="time">Time Log</TabsTrigger>
+                </TabsList>
+
+                {/* Tasks Tab */}
+                <TabsContent value="tasks" className="mt-4">
+                  <div className="space-y-4">
+                    {/* New Task Button */}
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => setShowTaskForm(!showTaskForm)}
+                        variant={showTaskForm ? 'outline' : 'default'}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        {showTaskForm ? 'Cancel' : 'New Task'}
+                      </Button>
+                    </div>
               {/* Create Task Form */}
               {showTaskForm && (
                 <form onSubmit={handleCreateTask} className="space-y-4 mb-6 p-4 border rounded-lg bg-muted/50">
@@ -710,6 +818,169 @@ export default function ProjectDetailPage() {
                       </Table>
                     </div>
                   )}
+                </TabsContent>
+              </Tabs>
+                  </div>
+                </TabsContent>
+
+                {/* Time Log Tab */}
+                <TabsContent value="time" className="mt-4">
+                  <div className="space-y-4">
+                    {/* Log Time Button */}
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        onClick={() => setShowTimeForm(!showTimeForm)}
+                        variant={showTimeForm ? 'outline' : 'default'}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        {showTimeForm ? 'Cancel' : 'Log Time'}
+                      </Button>
+                    </div>
+
+                    {/* Log Time Form */}
+                    {showTimeForm && (
+                      <form onSubmit={handleCreateTimeEntry} className="space-y-4 p-4 border rounded-lg bg-muted/50">
+                        <div className="space-y-2">
+                          <Label htmlFor="time-task">Task *</Label>
+                          <Select
+                            value={timeForm.taskId}
+                            onValueChange={(value) => setTimeForm({ ...timeForm, taskId: value })}
+                            required
+                          >
+                            <SelectTrigger id="time-task">
+                              <SelectValue placeholder="Select task" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {tasks.map((task: any) => (
+                                <SelectItem key={task.id} value={task.id}>
+                                  {task.title}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="time-duration">Duration (hours) *</Label>
+                            <Input
+                              id="time-duration"
+                              type="number"
+                              step="0.25"
+                              min="0.25"
+                              placeholder="e.g., 2.5"
+                              value={timeForm.duration}
+                              onChange={(e) => setTimeForm({ ...timeForm, duration: e.target.value })}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="time-date">Date *</Label>
+                            <Input
+                              id="time-date"
+                              type="date"
+                              value={timeForm.date}
+                              onChange={(e) => setTimeForm({ ...timeForm, date: e.target.value })}
+                              required
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="time-description">Description</Label>
+                          <Textarea
+                            id="time-description"
+                            placeholder="What did you work on?"
+                            value={timeForm.description}
+                            onChange={(e) => setTimeForm({ ...timeForm, description: e.target.value })}
+                            rows={2}
+                          />
+                        </div>
+                        <Button type="submit" disabled={createTimeEntryMutation.isPending} className="w-full">
+                          {createTimeEntryMutation.isPending ? 'Logging Time...' : 'Log Time'}
+                        </Button>
+                        {createTimeEntryMutation.isError && (
+                          <p className="text-sm text-red-600">
+                            {createTimeEntryMutation.error?.message || 'Failed to log time'}
+                          </p>
+                        )}
+                      </form>
+                    )}
+
+                    {/* Time Entries Table */}
+                    {loadingTimeEntries ? (
+                      <div className="space-y-2">
+                        <div className="h-12 bg-gray-200 rounded animate-pulse"></div>
+                        <div className="h-12 bg-gray-200 rounded animate-pulse"></div>
+                      </div>
+                    ) : timeEntries.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Clock className="mx-auto h-12 w-12 text-gray-400" />
+                        <h3 className="mt-2 text-sm font-semibold">No time entries yet</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Log time to track project hours
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="border rounded-lg">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Task</TableHead>
+                              <TableHead>User</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Duration</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead className="w-[80px]">Action</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {timeEntries.map((entry: any) => (
+                              <TableRow key={entry.id}>
+                                <TableCell>
+                                  <p className="font-medium text-sm">
+                                    {entry.task?.title || 'N/A'}
+                                  </p>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-3 w-3 text-muted-foreground" />
+                                    <span className="text-sm">
+                                      {entry.user?.name || 'Unknown'}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="text-sm text-muted-foreground">
+                                    {new Date(entry.date).toLocaleDateString()}
+                                  </span>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                                    {entry.duration}h
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <p className="text-sm text-muted-foreground line-clamp-1">
+                                    {entry.description || '—'}
+                                  </p>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => handleDeleteTimeEntry(entry.id)}
+                                    disabled={deleteTimeEntryMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </div>
                 </TabsContent>
               </Tabs>
             </CardContent>
