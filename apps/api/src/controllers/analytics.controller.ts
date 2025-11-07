@@ -41,7 +41,7 @@ export async function getDashboardAnalytics(
     ]);
 
     const statusCounts: Record<string, number> = {};
-    leadsByStatus.forEach((item) => {
+    leadsByStatus.forEach((item: any) => {
       statusCounts[item.status] = item._count;
     });
 
@@ -71,7 +71,7 @@ export async function getDashboardAnalytics(
     ]);
 
     const projectStatusCounts: Record<string, number> = {};
-    projectsByStatus.forEach((item) => {
+    projectsByStatus.forEach((item: any) => {
       projectStatusCounts[item.status] = item._count;
     });
 
@@ -125,7 +125,7 @@ export async function getDashboardAnalytics(
     ]);
 
     const taskStatusCounts: Record<string, number> = {};
-    tasksByStatus.forEach((item) => {
+    tasksByStatus.forEach((item: any) => {
       taskStatusCounts[item.status] = item._count;
     });
 

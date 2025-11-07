@@ -8,7 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 
 export default function ReportsPage() {
   const params = useParams();
-  const orgSlug = params.orgSlug as string;
+  const _orgSlug = params.orgSlug as string;
 
   // Fetch dashboard analytics
   const { data: analytics, isLoading } = useQuery({

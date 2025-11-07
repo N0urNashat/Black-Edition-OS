@@ -124,7 +124,7 @@ model Lead {
   assignedTo   User?        @relation("LeadAssignee", fields: [assignedToId], references: [id])
   customer     Customer?    @relation(fields: [customerId], references: [id])
 
-  activities   Activity[]
+  activities   Activity[]   @relation("ActivityLead")
   files        File[]       @relation("LeadFiles")
 
   @@index([organizationId])
@@ -158,7 +158,7 @@ model Customer {
   // Relations
   projects      Project[]
   invoices      Invoice[]
-  activities    Activity[]
+  activities    Activity[]     @relation("ActivityCustomer")
   files         File[]         @relation("CustomerFiles")
   leadsConverted Lead[]
   meetings      Meeting[]
@@ -205,7 +205,7 @@ model Project {
   timeEntries   TimeEntry[]
   invoices      Invoice[]
   files         File[]          @relation("ProjectFiles")
-  activities    Activity[]
+  activities    Activity[]      @relation("ActivityProject")
   meetings      Meeting[]
 
   @@index([organizationId])
@@ -276,7 +276,7 @@ model Task {
   blockedBy    TaskDependency[] @relation("BlockingTask")
   timeEntries  TimeEntry[]
   comments     TaskComment[]
-  activities   Activity[]
+  activities   Activity[]       @relation("ActivityTask")
 
   @@index([projectId])
   @@index([assignedToId])
@@ -412,7 +412,7 @@ model Invoice {
   // Relations
   lineItems    InvoiceLineItem[]
   payments     Payment[]
-  activities   Activity[]
+  activities   Activity[]        @relation("ActivityInvoice")
 
   @@index([organizationId])
   @@index([customerId])
@@ -515,11 +515,11 @@ model Activity {
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Polymorphic relations for quick access
-  lead    Lead?    @relation(fields: [entityId], references: [id], onDelete: Cascade)
-  customer Customer? @relation(fields: [entityId], references: [id], onDelete: Cascade)
-  project Project? @relation(fields: [entityId], references: [id], onDelete: Cascade)
-  task    Task?    @relation(fields: [entityId], references: [id], onDelete: Cascade)
-  invoice Invoice? @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  lead     Lead?     @relation("ActivityLead", fields: [entityId], references: [id], onDelete: Cascade, map: "activity_lead_fkey")
+  customer Customer? @relation("ActivityCustomer", fields: [entityId], references: [id], onDelete: Cascade, map: "activity_customer_fkey")
+  project  Project?  @relation("ActivityProject", fields: [entityId], references: [id], onDelete: Cascade, map: "activity_project_fkey")
+  task     Task?     @relation("ActivityTask", fields: [entityId], references: [id], onDelete: Cascade, map: "activity_task_fkey")
+  invoice  Invoice?  @relation("ActivityInvoice", fields: [entityId], references: [id], onDelete: Cascade, map: "activity_invoice_fkey")
 
   @@index([organizationId])
   @@index([userId])

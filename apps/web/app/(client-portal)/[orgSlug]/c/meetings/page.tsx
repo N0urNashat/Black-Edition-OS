@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 export default function ClientMeetingsPage() {
   const params = useParams();
   const queryClient = useQueryClient();
-  const orgSlug = params.orgSlug as string;
+  const _orgSlug = params.orgSlug as string;
 
   const [formData, setFormData] = useState({
     customerId: 'cust_1', // In a real app, this would be from auth context

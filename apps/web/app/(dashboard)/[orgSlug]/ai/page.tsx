@@ -19,7 +19,7 @@ import { Input } from '@/components/ui/input';
 
 export default function AIToolsPage() {
   const params = useParams();
-  const orgSlug = params.orgSlug as string;
+  const _orgSlug = params.orgSlug as string;
 
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [generatedProposal, setGeneratedProposal] = useState('');

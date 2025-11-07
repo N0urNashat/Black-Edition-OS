@@ -15,7 +15,7 @@ export async function generateProposal(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const { leadId } = req.body;
 
@@ -243,7 +243,7 @@ export async function aiSearch(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const { query } = req.body;
 

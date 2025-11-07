@@ -41,7 +41,7 @@ export default function CustomersPage() {
   const queryClient = useQueryClient();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<string>('createdAt');
+  const [sortBy] = useState<string>('createdAt');
 
   // Fetch customers using React Query
   const { data: customersData, isLoading, error, refetch } = useQuery({

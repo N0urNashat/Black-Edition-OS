@@ -21,7 +21,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useState } from 'react';
 
 interface SidebarProps {

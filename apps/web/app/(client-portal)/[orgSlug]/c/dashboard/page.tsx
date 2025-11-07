@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function ClientDashboardPage() {
   const params = useParams();
-  const orgSlug = params.orgSlug as string;
+  const _orgSlug = params.orgSlug as string;
 
   // Fetch dashboard summary data
   const { data: projects = [] } = useQuery({

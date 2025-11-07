@@ -18,7 +18,7 @@ export async function createPayMobCheckout(
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
 
     if (!invoiceId) {
-      throw new AppError('invoiceId is required', 400);
+      throw new AppError(400, 'invoiceId is required');
     }
 
     // Fetch invoice with customer details
@@ -31,7 +31,7 @@ export async function createPayMobCheckout(
     });
 
     if (!invoice) {
-      throw new AppError('Invoice not found', 404);
+      throw new AppError(404, 'Invoice not found');
     }
 
     // Get organization payment settings
@@ -45,7 +45,7 @@ export async function createPayMobCheckout(
     });
 
     if (!organization?.payMobEnabled || !organization.payMobApiKey || !organization.payMobIntegrationId) {
-      throw new AppError('PayMob is not configured for this organization', 400);
+      throw new AppError(400, 'PayMob is not configured for this organization');
     }
 
     // Step 1: Authentication - Get auth token
@@ -136,7 +136,7 @@ export async function createPayMobCheckout(
     logger.error('PayMob checkout error:', error.response?.data || error.message);
 
     if (error.response?.data) {
-      throw new AppError(`PayMob API Error: ${JSON.stringify(error.response.data)}`, 500);
+      throw new AppError(500, `PayMob API Error: ${JSON.stringify(error.response.data)}`);
     }
 
     next(error);
@@ -151,7 +151,7 @@ export async function handlePayMobWebhook(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const payload = req.body;
 
@@ -166,7 +166,7 @@ export async function handlePayMobWebhook(
     } = payload;
 
     if (!order?.merchant_order_id) {
-      throw new AppError('Invalid webhook payload', 400);
+      throw new AppError(400, 'Invalid webhook payload');
     }
 
     const invoiceNumber = order.merchant_order_id;

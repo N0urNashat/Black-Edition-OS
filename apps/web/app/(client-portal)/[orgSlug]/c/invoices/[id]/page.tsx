@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { ArrowLeft, CreditCard, Wallet, Building2, FileText, Loader2 } from 'lucide-react';
@@ -30,7 +30,6 @@ const statusColors: Record<string, string> = {
 
 export default function ClientInvoiceDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const invoiceId = params.id as string;
   const orgSlug = params.orgSlug as string;
 

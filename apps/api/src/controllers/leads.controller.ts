@@ -328,7 +328,7 @@ export async function getLeadStats(
 
     // Calculate status counts
     const statusCounts: Record<string, number> = {};
-    leadsByStatus.forEach((item) => {
+    leadsByStatus.forEach((item: any) => {
       statusCounts[item.status] = item._count;
     });
 

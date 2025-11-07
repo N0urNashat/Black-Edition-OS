@@ -38,7 +38,7 @@ export async function getReportById(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const { id } = req.params;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';
@@ -74,7 +74,7 @@ export async function createReport(
   req: Request,
   res: Response,
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const data = req.body;
     const organizationId = req.headers['x-organization-id'] as string || 'org_black_edition';

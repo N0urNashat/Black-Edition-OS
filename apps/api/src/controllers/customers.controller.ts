@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '@repo/database';
 import { AppError } from '../middleware/error-handler';
-import { logger } from '../utils/logger';
 
 /**
  * Get all customers with filters and pagination
