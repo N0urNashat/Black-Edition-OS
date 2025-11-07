@@ -31,7 +31,7 @@ export async function getPaymentSettings(
     });
 
     if (!organization) {
-      throw new AppError('Organization not found', 404);
+      throw new AppError(404, 'Organization not found');
     }
 
     res.json({

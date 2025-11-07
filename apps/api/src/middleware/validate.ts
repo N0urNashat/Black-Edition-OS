@@ -5,7 +5,7 @@ import { AnyZodObject, ZodError } from 'zod';
  * Middleware to validate request data using Zod schemas
  */
 export const validate = (schema: AnyZodObject) => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       await schema.parseAsync({
         body: req.body,

@@ -124,7 +124,7 @@ export async function generateReportInsights(
     ]);
 
     const leadStatusCounts: Record<string, number> = {};
-    leadsByStatus.forEach((item) => {
+    leadsByStatus.forEach((item: any) => {
       leadStatusCounts[item.status] = item._count;
     });
 
@@ -147,7 +147,7 @@ export async function generateReportInsights(
     ]);
 
     const projectStatusCounts: Record<string, number> = {};
-    projectsByStatus.forEach((item) => {
+    projectsByStatus.forEach((item: any) => {
       projectStatusCounts[item.status] = item._count;
     });
 
